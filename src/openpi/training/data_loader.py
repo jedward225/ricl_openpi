@@ -97,6 +97,153 @@ def get_action_chunk(action_joint_vels, action_gripper_pos, step_idx, action_hor
     return action_chunk
 
 
+def get_action_chunk_rlbench(actions, step_idx, action_horizon):
+    """Get action chunk for RLBench data (7D delta-EE actions).
+
+    actions: (T, 7) float32 — [dx, dy, dz, drx, dry, drz, gripper]
+    Padding: delta actions pad with zeros, gripper repeats last value.
+    """
+    num_steps = len(actions)
+    action_dim = actions.shape[1]
+    action_chunk = []
+    for i in range(action_horizon):
+        if step_idx + i < num_steps:
+            action_chunk.append(actions[step_idx + i])
+        else:
+            padded = np.zeros(action_dim, dtype=np.float32)
+            padded[-1] = actions[-1, -1]  # repeat last gripper value
+            action_chunk.append(padded)
+    action_chunk = np.stack(action_chunk, axis=0)
+    assert action_chunk.shape == (action_horizon, action_dim), f"{action_chunk.shape=}"
+    return action_chunk
+
+
+class RiclRLBenchDataset(Dataset):
+    """RICL dataset for RLBench success-only retrieval.
+
+    Loads preprocessed RLBench demos (processed_demo.npz) and pre-computed
+    KNN retrieval indices (indices_and_distances.npz). Returns retrieved
+    observations + query observation in RICL format.
+    """
+
+    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, processed_dir: str):
+        num_retrieved_observations = model_config.num_retrieved_observations
+
+        # Load episode mappings
+        collected_demos_infos = {
+            k: json.load(open(os.path.join(processed_dir, f"{k}.json")))
+            for k in ["ep_idxs_to_fol", "fols_to_ep_idxs", "groups_to_ep_fols", "groups_to_ep_idxs"]
+        }
+
+        # Load indices and distances from all episodes
+        all_retrieved_indices = []
+        all_query_indices = []
+        all_distances = []
+
+        for group_name, ep_fols in collected_demos_infos["groups_to_ep_fols"].items():
+            for ep_fol in ep_fols:
+                idx_path = os.path.join(ep_fol, "indices_and_distances.npz")
+                indices_and_dists = np.load(idx_path)
+                query_indices = indices_and_dists["query_indices"]
+                retrieved_indices = indices_and_dists["retrieved_indices"][:, :num_retrieved_observations, :]
+                distances = np.concatenate(
+                    (indices_and_dists["distances"][:, :num_retrieved_observations],
+                     indices_and_dists["distances"][:, -1:]),
+                    axis=1,
+                )
+                num_steps = query_indices.shape[0]
+                assert retrieved_indices.shape == (num_steps, num_retrieved_observations, 2)
+                assert query_indices.shape == (num_steps, 2)
+                all_retrieved_indices.append(retrieved_indices)
+                all_query_indices.append(query_indices)
+                all_distances.append(distances)
+
+        all_retrieved_indices = np.concatenate(all_retrieved_indices, axis=0)
+        all_query_indices = np.concatenate(all_query_indices, axis=0)
+        all_distances = np.concatenate(all_distances, axis=0)
+        len_dataset = all_retrieved_indices.shape[0]
+        print(f"RiclRLBenchDataset: {len_dataset} frames total")
+        assert all_retrieved_indices.shape == (len_dataset, num_retrieved_observations, 2)
+        assert all_query_indices.shape == (len_dataset, 2)
+        assert all_distances.shape == (len_dataset, num_retrieved_observations + 1)
+
+        # Normalize distances
+        max_dist_data = json.load(open(os.path.join(processed_dir, "max_distance.json")))
+        max_dist_value = max_dist_data["max_distance"]
+        print(f"max_distance: {max_dist_value:.4f}")
+        all_distances = (all_distances / max_dist_value).astype(np.float32)
+
+        # Build episode data paths and load prompts
+        all_ep_idxs = set(all_retrieved_indices[:, :, 0].flatten()) | set(all_query_indices[:, 0].flatten())
+        all_ep_data_paths = {}
+        all_ep_prompts = {}
+        for ep_idx in all_ep_idxs:
+            ep_fol = collected_demos_infos["ep_idxs_to_fol"][str(ep_idx)]
+            all_ep_data_paths[ep_idx] = os.path.join(ep_fol, "processed_demo.npz")
+            # Load prompt from npz (stored as numpy string)
+            npz_data = np.load(all_ep_data_paths[ep_idx], allow_pickle=True)
+            all_ep_prompts[ep_idx] = str(npz_data["prompt"])
+
+        if len(set(all_ep_prompts.values())) <= 8:
+            prompts_summary = {v for v in all_ep_prompts.values()}
+            print(f"Task prompts: {prompts_summary}")
+
+        # Save
+        self.len_dataset = len_dataset
+        self.all_ep_data_paths = all_ep_data_paths
+        self.all_ep_prompts = all_ep_prompts
+        self.all_retrieved_indices = all_retrieved_indices
+        self.all_query_indices = all_query_indices
+        self.all_distances = all_distances
+        self.use_action_interpolation = model_config.use_action_interpolation
+        self.lamda = model_config.lamda
+        self.action_horizon = model_config.action_horizon
+
+    def __getitem__(self, index: SupportsIndex) -> dict:
+        retrieved_indices = self.all_retrieved_indices[index, :, :]
+        query_ep_idx, query_step_idx = self.all_query_indices[index, :]
+
+        # Load episode data for all referenced episodes
+        ep_idxs = list(set(retrieved_indices[:, 0].tolist()) | {int(query_ep_idx)})
+        ep_data = {ep_idx: np.load(self.all_ep_data_paths[ep_idx]) for ep_idx in ep_idxs}
+
+        data = {}
+        # Retrieved observations
+        for ct, (ep_idx, step_idx) in enumerate(retrieved_indices):
+            ep_idx, step_idx = int(ep_idx), int(step_idx)
+            prefix = f"retrieved_{ct}_"
+            data[f"{prefix}top_image"] = ep_data[ep_idx]["top_image"][step_idx]
+            data[f"{prefix}right_image"] = ep_data[ep_idx]["right_image"][step_idx]
+            data[f"{prefix}wrist_image"] = ep_data[ep_idx]["wrist_image"][step_idx]
+            data[f"{prefix}state"] = ep_data[ep_idx]["state"][step_idx]
+            data[f"{prefix}actions"] = get_action_chunk_rlbench(
+                ep_data[ep_idx]["actions"], step_idx, self.action_horizon
+            )
+            data[f"{prefix}prompt"] = self.all_ep_prompts[ep_idx]
+
+        # Query observation
+        query_ep_idx, query_step_idx = int(query_ep_idx), int(query_step_idx)
+        prefix = "query_"
+        data[f"{prefix}top_image"] = ep_data[query_ep_idx]["top_image"][query_step_idx]
+        data[f"{prefix}right_image"] = ep_data[query_ep_idx]["right_image"][query_step_idx]
+        data[f"{prefix}wrist_image"] = ep_data[query_ep_idx]["wrist_image"][query_step_idx]
+        data[f"{prefix}state"] = ep_data[query_ep_idx]["state"][query_step_idx]
+        data[f"{prefix}actions"] = get_action_chunk_rlbench(
+            ep_data[query_ep_idx]["actions"], query_step_idx, self.action_horizon
+        )
+        data[f"{prefix}prompt"] = self.all_ep_prompts[query_ep_idx]
+
+        # Action interpolation distances
+        if self.use_action_interpolation:
+            distances = self.all_distances[index, :]
+            data["exp_lamda_distances"] = np.exp(-self.lamda * distances).reshape(-1, 1)
+
+        return data
+
+    def __len__(self) -> int:
+        return self.len_dataset
+
+
 class Pi0FastDroidFinetuneDataset(Dataset):
     def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, finetuning_collected_demos_dir: str | None):
         assert finetuning_collected_demos_dir is not None
@@ -370,7 +517,9 @@ def create_data_loader(
     """
     data_config = config.data.create(config.assets_dirs, config.model)
 
-    if "ricl" in config.name:
+    if "rlbench_ricl" in config.name:
+        dataset = RiclRLBenchDataset(config.model, config.processed_dir)
+    elif "ricl" in config.name:
         dataset = RiclDroidDataset(config.model, config.finetuning_collected_demos_dir)
     elif "pi0_fast_droid___finetune_on_" in config.name:
         dataset = Pi0FastDroidFinetuneDataset(config.model, config.finetuning_collected_demos_dir)
