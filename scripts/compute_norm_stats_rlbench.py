@@ -58,12 +58,21 @@ def main():
             "q99": np.percentile(arr, 99, axis=0).tolist(),
         }
 
-    norm_stats = {
-        "norm_stats": {
-            "state": compute_stats(states),
-            "actions": compute_stats(actions),
-        }
+    # Keys must match the data dict field names used after RiclRLBenchInputs transform:
+    # query_state, query_actions, retrieved_0_state, retrieved_0_actions, etc.
+    # All share the same statistics (same data distribution).
+    state_stats = compute_stats(states)
+    action_stats = compute_stats(actions)
+
+    ns = {
+        "query_state": state_stats,
+        "query_actions": action_stats,
     }
+    for i in range(4):  # num_retrieved_observations
+        ns[f"retrieved_{i}_state"] = state_stats
+        ns[f"retrieved_{i}_actions"] = action_stats
+
+    norm_stats = {"norm_stats": ns}
 
     os.makedirs(args.output_dir, exist_ok=True)
     output_path = os.path.join(args.output_dir, "norm_stats.json")
@@ -72,7 +81,7 @@ def main():
     print(f"Saved norm stats to {output_path}")
 
     # Print summary
-    for key in ["state", "actions"]:
+    for key in ["query_state", "query_actions"]:
         stats = norm_stats["norm_stats"][key]
         print(f"\n{key}:")
         print(f"  mean: {[f'{v:.4f}' for v in stats['mean']]}")

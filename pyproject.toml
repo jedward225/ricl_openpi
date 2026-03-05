@@ -11,11 +11,11 @@ dependencies = [
     "einops>=0.8.0",
     "equinox>=0.11.8",
     "flatbuffers>=24.3.25",
-    "flax==0.10.2",
+    "flax>=0.10.2",
     "fsspec[gcs]>=2024.6.0",
     "gym-aloha>=0.1.1",
     "imageio>=2.36.1",
-    "jax[cuda12]==0.5.0",
+    "jax[cuda12]>=0.6.0",
     "jaxtyping==0.2.36",
     "lerobot",
     "ml_collections==1.0.0",
@@ -23,7 +23,7 @@ dependencies = [
     "numpydantic>=1.6.6",
     "opencv-python-headless>=4.10.0.84",
     "openpi-client",
-    "orbax-checkpoint==0.11.1",
+    "orbax-checkpoint>=0.11.1",
     "pillow>=11.0.0",
     "s3fs>=2024.9.0",
     "sentencepiece>=0.2.0",
@@ -59,7 +59,7 @@ dev = [
 
 [tool.uv]
 environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
-override-dependencies = ["ml-dtypes==0.4.1", "tensorstore==0.1.74"]
+override-dependencies = ["ml-dtypes>=0.5.0", "tensorstore>=0.1.74", "numpy>=2.1.0", "nvidia-cuda-nvcc-cu12>=12.8"]
 
 [tool.uv.sources]
 openpi-client = { workspace = true }
