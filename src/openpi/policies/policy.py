@@ -81,7 +81,7 @@ def get_action_chunk_at_inference_time(actions, step_idx, action_horizon):
         else:
             action_chunk.append(np.concatenate([np.zeros(actions.shape[-1]-1, dtype=np.float32), actions[-1, -1:]], axis=0)) # combines 0 joint vels with last gripper pos
     action_chunk = np.stack(action_chunk, axis=0)
-    assert action_chunk.shape == (action_horizon, 8), f"{action_chunk.shape=}"
+    assert action_chunk.shape == (action_horizon, actions.shape[-1]), f"{action_chunk.shape=}"
     return action_chunk
 
 
@@ -113,7 +113,14 @@ class RiclPolicy(BasePolicy):
         # setup demos for retrieval
         print()
         logger.info(f'loading demos from {demos_dir}...')
-        self._demos = {demo_idx: np.load(f"{demos_dir}/{folder}/processed_demo.npz") for demo_idx, folder in enumerate(os.listdir(demos_dir)) if os.path.isdir(f"{demos_dir}/{folder}")}
+        # Find all processed_demo.npz files (supports both flat and nested task/episode structure)
+        demo_paths = []
+        for root, dirs, files in os.walk(demos_dir):
+            if "processed_demo.npz" in files:
+                demo_paths.append(os.path.join(root, "processed_demo.npz"))
+        demo_paths.sort()
+        logger.info(f'found {len(demo_paths)} demo files')
+        self._demos = {demo_idx: np.load(path) for demo_idx, path in enumerate(demo_paths)}
         self._all_indices = np.array([(ep_idx, step_idx) for ep_idx in list(self._demos.keys()) for step_idx in range(self._demos[ep_idx]["actions"].shape[0])])
         _all_embeddings = np.concatenate([self._demos[ep_idx]["top_image_embeddings"] for ep_idx in list(self._demos.keys())])
         assert _all_embeddings.shape == (len(self._all_indices), EMBED_DIM), f"{_all_embeddings.shape=}"
@@ -132,8 +139,16 @@ class RiclPolicy(BasePolicy):
         # setup the dinov2 model for embedding only
         logger.info('loading dinov2 for image embedding...')
         self._dinov2 = load_dinov2()
-        self._max_dist = json.load(open(f"assets/max_distance.json", 'r'))['distances']['max']
-        print(f'self._max_dist: {self._max_dist} [helpful to carefully check this value in case of any issues]')
+        # Load max_distance — try demos_dir first (RLBench), then assets/ (DROID)
+        max_dist_path = f"{demos_dir}/max_distance.json" if demos_dir else None
+        if max_dist_path is None or not os.path.exists(max_dist_path):
+            max_dist_path = "assets/max_distance.json"
+        max_dist_data = json.load(open(max_dist_path, 'r'))
+        if "max_distance" in max_dist_data:
+            self._max_dist = max_dist_data["max_distance"]
+        else:
+            self._max_dist = max_dist_data['distances']['max']
+        print(f'self._max_dist: {self._max_dist} (from {max_dist_path})')
 
     def retrieve(self, obs: dict) -> dict:
         more_obs = {"inference_time": True}
