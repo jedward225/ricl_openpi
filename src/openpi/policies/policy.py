@@ -18,7 +18,7 @@ from openpi.shared import array_typing as at
 from openpi.shared import nnx_utils
 from openpi.policies.utils import embed, embed_with_batches, load_dinov2, EMBED_DIM
 import os
-from autofaiss import build_index
+import faiss
 import logging
 from datetime import datetime
 import json
@@ -126,16 +126,10 @@ class RiclPolicy(BasePolicy):
         assert _all_embeddings.shape == (len(self._all_indices), EMBED_DIM), f"{_all_embeddings.shape=}"
         self._knn_k = self._model.num_retrieved_observations
         print()
-        logger.info(f'building retrieval index...')
-        self._knn_index, knn_index_infos = build_index(embeddings=_all_embeddings, # Note: embeddings have to be float to avoid errors in autofaiss / embedding_reader!
-                                            save_on_disk=False,
-                                            min_nearest_neighbors_to_retrieve=self._knn_k + 5, # default: 20
-                                            max_index_query_time_ms=10, # default: 10
-                                            max_index_memory_usage="25G", # default: "16G"
-                                            current_memory_available="50G", # default: "32G"
-                                            metric_type='l2',
-                                            nb_cores=8, # default: None # "The number of cores to use, by default will use all cores" as seen in https://criteo.github.io/autofaiss/getting_started/quantization.html#the-build-index-command
-                                            )
+        logger.info(f'building retrieval index (flat L2, {_all_embeddings.shape[0]} vectors, dim={_all_embeddings.shape[1]})...')
+        self._knn_index = faiss.IndexFlatL2(_all_embeddings.shape[1])
+        self._knn_index.add(_all_embeddings.astype(np.float32))
+        logger.info(f'index built: {self._knn_index.ntotal} vectors')
         # setup the dinov2 model for embedding only
         logger.info('loading dinov2 for image embedding...')
         self._dinov2 = load_dinov2()
@@ -251,6 +245,11 @@ class RiclPolicy(BasePolicy):
         outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
         final_outputs = self._output_transform(outputs)
         print(f'final_outputs: {final_outputs}')
+        # Attach retrieved context images for visualization
+        for i in range(self._knn_k):
+            key = f"retrieved_{i}_top_image"
+            if key in obs:
+                final_outputs[key] = obs[key]
         return final_outputs
 
     @property

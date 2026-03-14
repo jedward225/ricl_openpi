@@ -41,7 +41,9 @@ def myprint(s):
 	print(f'{get_time()}: {s}')
 
 def load_dinov2():
-	dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+	cache_dir = os.path.expanduser('~/.cache/torch/hub/facebookresearch_dinov2_main')
+	dinov2 = torch.hub.load(cache_dir, 'dinov2_vitb14', source='local')
+	# dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
 	dinov2.eval()
 	if torch.cuda.is_available():
 		dinov2 = dinov2.cuda()

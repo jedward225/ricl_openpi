@@ -122,16 +122,34 @@ class VideoRecorder:
         self.output_path = output_path
         self.fps = fps
         self.frames = []
+        self._context_images = None  # (4, 224, 224, 3) retrieved context
+
+    def set_context(self, policy_result: dict):
+        """Extract retrieved context images from policy inference result."""
+        ctx_imgs = []
+        for i in range(4):
+            key = f"retrieved_{i}_top_image"
+            if key in policy_result:
+                img = policy_result[key]
+                # Resize from 224x224 to 256x256 to match obs
+                if img.shape[:2] != (256, 256):
+                    img = np.array(Image.fromarray(img).resize((256, 256)))
+                ctx_imgs.append(img)
+        self._context_images = ctx_imgs if ctx_imgs else None
 
     def add_frame(self, obs):
-        front = obs.front_rgb
+        front = obs.front_rgb  # (256, 256, 3)
         wrist = obs.wrist_rgb
         overhead = obs.overhead_rgb
-        for img_ref in [front, wrist, overhead]:
-            if img_ref.shape[:2] != (256, 256):
-                pass  # images should already be 256x256 from RLBench
-        # 3-camera side by side
-        frame = np.concatenate([front, overhead, wrist], axis=1)
+        # Top row: front + overhead + wrist (live observation)
+        top_row = np.concatenate([front, overhead, wrist], axis=1)  # (256, 768, 3)
+        # Bottom row: retrieved context images (or black placeholder)
+        if self._context_images:
+            ctx_row = np.concatenate(self._context_images[:3], axis=1)
+        else:
+            ctx_row = np.zeros_like(top_row)
+        separator = np.zeros((4, top_row.shape[1], 3), dtype=np.uint8)
+        frame = np.concatenate([top_row, separator, ctx_row], axis=0)
         self.frames.append(frame)
 
     def save(self):
@@ -140,7 +158,7 @@ class VideoRecorder:
         try:
             import imageio
             imageio.mimsave(self.output_path, self.frames, fps=self.fps)
-            print(f"  Video saved: {self.output_path}")
+            print(f"  Video saved: {self.output_path} ({len(self.frames)} frames, {self.fps} fps)")
         except ImportError:
             images = [Image.fromarray(f) for f in self.frames]
             gif_path = self.output_path.replace('.mp4', '.gif')
@@ -149,6 +167,7 @@ class VideoRecorder:
 
     def clear(self):
         self.frames = []
+        self._context_images = None
 
 
 def evaluate_episode(
@@ -182,6 +201,9 @@ def evaluate_episode(
             action_buffer = actions
             action_idx = 0
             num_inferences += 1
+            # Update context visualization on each replan
+            if video_recorder:
+                video_recorder.set_context(result)
 
         action = action_buffer[action_idx]
         action_idx += 1

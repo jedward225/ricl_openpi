@@ -135,7 +135,7 @@ class FASTTokenizer:
         if isinstance(tokens, list):
             tokens = np.array(tokens)
         return self._paligemma_tokenizer.vocab_size() - 1 - self._fast_skip_tokens - tokens
-    
+
 
 class FASTTokenizerRicl:
     def __init__(self, max_len: int = 256, fast_tokenizer_path: str = "physical-intelligence/fast", action_horizon: int = 10, action_dim: int = 8):

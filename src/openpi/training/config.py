@@ -662,6 +662,7 @@ _CONFIGS = [
             base_config=DataConfig(prompt_from_task=False),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
+            # "/cephfs_ssd_xumengdi/models/pi0_fast_base/params"
             "s3://openpi-assets/checkpoints/pi0_fast_base/params"
         ),
         num_train_steps=20_000,
