@@ -302,7 +302,7 @@ class Pi0FASTRicl(_model.BaseModel):
                             this_observation.tokenized_prompt_postfix,
                             self.PaliGemma.llm.module.vocab_size,
                             )
-                    print(f'first_targets shape: {first_targets.shape}')
+                    # print(f'first_targets shape: {first_targets.shape}')
 
         # combine most lists along the num tokens axis
         input_token_embeddings = jnp.concatenate(list_of_input_token_embeddings, axis=1)
@@ -314,10 +314,10 @@ class Pi0FASTRicl(_model.BaseModel):
             self.PaliGemma.llm.module.vocab_size,
         )
 
-        print(f'input_token_embeddings shape: {input_token_embeddings.shape}')
-        print(f'attn_mask shape: {attn_mask.shape}')
-        print(f'loss_mask shape: {loss_mask.shape}')
-        print(f'targets shape: {targets.shape}')
+        # print(f'input_token_embeddings shape: {input_token_embeddings.shape}')
+        # print(f'attn_mask shape: {attn_mask.shape}')
+        # print(f'loss_mask shape: {loss_mask.shape}')
+        # print(f'targets shape: {targets.shape}')
 
         # Each input predicts *next* token, so we don't input the last token.
         pre_logits, _, _ = self.PaliGemma.llm(
@@ -325,19 +325,19 @@ class Pi0FASTRicl(_model.BaseModel):
             mask=attn_mask[:, :-1, :-1],
             return_prelogits=True,
         )
-        print(f'pre_logits shape: {pre_logits.shape}')
+        # print(f'pre_logits shape: {pre_logits.shape}')
 
         # Only decode logits for the target tokens to save memory
         # (decoding matmul is large because it is a seq_len x vocab_size dense layer).
         logits, _ = self.PaliGemma.llm(
             pre_logits=pre_logits[:, -targets.shape[1]:],
         )
-        print(f'logits shape: {logits.shape}')
+        # print(f'logits shape: {logits.shape}')
 
         if self.use_action_interpolation:
             new_logits = self.interpolate_actions(logits=logits, first_targets=first_targets, exp_lamda_distances=ricl_observation.exp_lamda_distances[:, -1:, :],
                                                   inference_time=False)
-            print(f'new_logits shape: {new_logits.shape}')
+            # print(f'new_logits shape: {new_logits.shape}')
             # clamp the logits to avoid nan from log(0) and instabilities from log(1)
             epsilon = 1e-9
             new_logits = jnp.clip(new_logits, epsilon, 1 - epsilon)
@@ -345,13 +345,13 @@ class Pi0FASTRicl(_model.BaseModel):
             logp = jnp.log(new_logits)
         else:
             logp = jax.nn.log_softmax(logits, axis=-1)
-        print(f'logp shape: {logp.shape}')
+        # print(f'logp shape: {logp.shape}')
 
         # Compute CE loss on token targets
         token_pplx = jnp.sum(targets * logp, axis=-1)
-        print(f'token_pplx shape: {token_pplx.shape}')
+        # print(f'token_pplx shape: {token_pplx.shape}')
         loss = -jnp.sum(token_pplx * loss_mask, axis=-1) / jnp.clip(jnp.sum(loss_mask, -1), 1)
-        print(f'loss shape: {loss.shape}')
+        # print(f'loss shape: {loss.shape}')
         return loss
     
     def sample_actions_multiple_observations_processing(self, ricl_observation: _model.RiclObservation):
@@ -395,17 +395,17 @@ class Pi0FASTRicl(_model.BaseModel):
                 else:
                     query_prompt_len = this_observation.tokenized_prompt_prefix.shape[1]
                 query_block_len = this_prefix_token_embeddings.shape[1]
-                print(f'query_prompt_len: {query_prompt_len}')
+                # print(f'query_prompt_len: {query_prompt_len}')
                 max_decoding_steps = retrieval_prompt_len - query_prompt_len
-                print(f'max_decoding_steps: {max_decoding_steps}')
+                # print(f'max_decoding_steps: {max_decoding_steps}')
 
 
         # combine all input token embeddings and attn masks along the num tokens axis
         prefix_token_embeddings = jnp.concatenate(list_of_prefix_token_embeddings, axis=1)
         batch_size, seq_len = prefix_token_embeddings.shape[0:2]
         prefix_attn_mask = self.combine_attn_masks_inference_time(list_of_prefix_attn_masks, batch_size, seq_len, num_observations, retrieval_block_len, query_block_len)
-        print(f'prefix_token_embeddings shape: {prefix_token_embeddings.shape}')
-        print(f'prefix_attn_mask shape: {prefix_attn_mask.shape}')
+        # print(f'prefix_token_embeddings shape: {prefix_token_embeddings.shape}')
+        # print(f'prefix_attn_mask shape: {prefix_attn_mask.shape}')
 
         # create a dummy prefix max of all ones for sequence length
         prefix_mask = jnp.ones((batch_size, seq_len), dtype=jnp.bool_)
@@ -433,9 +433,9 @@ class Pi0FASTRicl(_model.BaseModel):
         # first fill KV cache with a forward pass of the prefix
         # pad attention mask to set the size of the KV cache (prefill_size + max_decoding_steps)
         prefix_attn_mask = jnp.pad(prefix_attn_mask, ((0, 0), (0, 0), (0, max_decoding_steps)))
-        print(f'prefix_attn_mask shape: {prefix_attn_mask.shape}')
+        # print(f'prefix_attn_mask shape: {prefix_attn_mask.shape}')
         prefix_positions = jnp.cumsum(prefix_mask, axis=-1) - 1
-        print(f'prefix_positions shape: {prefix_positions.shape}')
+        # print(f'prefix_positions shape: {prefix_positions.shape}')
         prefix_logits, kv_cache, _ = self.PaliGemma.llm(
             embedded_prefix=prefix_token_embeddings, mask=prefix_attn_mask, positions=prefix_positions, decode=True
         )
@@ -444,15 +444,15 @@ class Pi0FASTRicl(_model.BaseModel):
         last_logit_old = prefix_logits[:, -1:]
         original_dtype = last_logit_old.dtype
 
-        print(f'last_logit_old shape: {last_logit_old.shape}')
+        # print(f'last_logit_old shape: {last_logit_old.shape}')
         if self.use_action_interpolation:
-            print(f'step: 0 / {max_decoding_steps}')
-            print(f'full first_targets shape: {first_targets.shape}')
+            # print(f'step: 0 / {max_decoding_steps}')
+            # print(f'full first_targets shape: {first_targets.shape}')
             last_logit = self.interpolate_actions(logits=last_logit_old, first_targets=first_targets[:, 0:1, :], exp_lamda_distances=ricl_observation.exp_lamda_distances[:, -1:, :],
                                                   inference_time=True).astype(original_dtype)
         else:
             last_logit = last_logit_old
-        print(f'last_logit shape: {last_logit.shape}')
+        # print(f'last_logit shape: {last_logit.shape}')
 
         output_tokens = jnp.zeros((last_logit.shape[0], max_decoding_steps))
 
@@ -479,23 +479,23 @@ class Pi0FASTRicl(_model.BaseModel):
                 jnp.arange(prefill_size + max_decoding_steps)[None, None, :]
                 < (jnp.broadcast_to(prefill_size + step + 1, (prefix_start.shape[0], 1, 1))),
             )
-            print(f'mask shape: {mask.shape}')
-            print(f'positions shape: {positions.shape}')
-            print(f'token_embedding shape: {token_embedding.shape}')
+            # print(f'mask shape: {mask.shape}')
+            # print(f'positions shape: {positions.shape}')
+            # print(f'token_embedding shape: {token_embedding.shape}')
             last_logit_old, kv_cache, _ = self.PaliGemma.llm(
                 embedded_prefix=token_embedding, mask=mask, positions=positions, decode=True, kv_cache=cache
             )
 
-            print(f'last_logit_old shape: {last_logit_old.shape}')
+            # print(f'last_logit_old shape: {last_logit_old.shape}')
             if self.use_action_interpolation:
-                print(f'step: {step} / {max_decoding_steps}')
+                # print(f'step: {step} / {max_decoding_steps}')
                 first_targets_slice = jax.lax.dynamic_slice(first_targets, (0, step+1, 0), (first_targets.shape[0], 1, first_targets.shape[2]))
-                print(f'first_targets_slice shape: {first_targets_slice.shape}')
+                # print(f'first_targets_slice shape: {first_targets_slice.shape}')
                 last_logit = self.interpolate_actions(logits=last_logit_old, first_targets=first_targets_slice, exp_lamda_distances=ricl_observation.exp_lamda_distances[:, -1:, :],
                                                       inference_time=True).astype(original_dtype)
             else:
                 last_logit = last_logit_old
-            print(f'last_logit shape: {last_logit.shape}')
+            # print(f'last_logit shape: {last_logit.shape}')
 
             return last_logit, output_tokens, kv_cache, all_eos, step + 1
 

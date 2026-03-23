@@ -62,7 +62,7 @@ class Policy(BasePolicy):
 
         # Unbatch and convert to np.ndarray.
         outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
-        print(f'outputs: {outputs}')
+        # print(f'outputs: {outputs}')
         final_outputs = self._output_transform(outputs)
         logger.info(f'final_outputs: {final_outputs}')
         return final_outputs
@@ -111,7 +111,7 @@ class RiclPolicy(BasePolicy):
         self._lamda = lamda
         self._action_horizon = action_horizon
         # setup demos for retrieval
-        print()
+        #         print()
         logger.info(f'loading demos from {demos_dir}...')
         # Find all processed_demo.npz files (supports both flat and nested task/episode structure)
         demo_paths = []
@@ -125,7 +125,7 @@ class RiclPolicy(BasePolicy):
         _all_embeddings = np.concatenate([self._demos[ep_idx]["top_image_embeddings"] for ep_idx in list(self._demos.keys())])
         assert _all_embeddings.shape == (len(self._all_indices), EMBED_DIM), f"{_all_embeddings.shape=}"
         self._knn_k = self._model.num_retrieved_observations
-        print()
+        #         print()
         logger.info(f'building retrieval index (flat L2, {_all_embeddings.shape[0]} vectors, dim={_all_embeddings.shape[1]})...')
         self._knn_index = faiss.IndexFlatL2(_all_embeddings.shape[1])
         self._knn_index.add(_all_embeddings.astype(np.float32))
@@ -142,7 +142,24 @@ class RiclPolicy(BasePolicy):
             self._max_dist = max_dist_data["max_distance"]
         else:
             self._max_dist = max_dist_data['distances']['max']
-        print(f'self._max_dist: {self._max_dist} (from {max_dist_path})')
+        # print(f'self._max_dist: {self._max_dist} (from {max_dist_path})')
+
+    def rebuild_index(self, demos_dir: str):
+        """Rebuild KNN index from a different demos directory (e.g., per-task)."""
+        logger.info(f'rebuilding retrieval index from {demos_dir}...')
+        demo_paths = []
+        for root, dirs, files in os.walk(demos_dir):
+            if "processed_demo.npz" in files:
+                demo_paths.append(os.path.join(root, "processed_demo.npz"))
+        demo_paths.sort()
+        logger.info(f'found {len(demo_paths)} demo files')
+        self._demos = {demo_idx: np.load(path) for demo_idx, path in enumerate(demo_paths)}
+        self._all_indices = np.array([(ep_idx, step_idx) for ep_idx in list(self._demos.keys()) for step_idx in range(self._demos[ep_idx]["actions"].shape[0])])
+        _all_embeddings = np.concatenate([self._demos[ep_idx]["top_image_embeddings"] for ep_idx in list(self._demos.keys())])
+        assert _all_embeddings.shape == (len(self._all_indices), EMBED_DIM), f"{_all_embeddings.shape=}"
+        self._knn_index = faiss.IndexFlatL2(_all_embeddings.shape[1])
+        self._knn_index.add(_all_embeddings.astype(np.float32))
+        logger.info(f'index rebuilt: {self._knn_index.ntotal} vectors')
 
     def retrieve(self, obs: dict) -> dict:
         more_obs = {"inference_time": True}
@@ -165,9 +182,9 @@ class RiclPolicy(BasePolicy):
             distances = [0.0] + [np.linalg.norm(self._demos[ep_idx]["top_image_embeddings"][step_idx:step_idx+1] - first_embedding) for ep_idx, step_idx in retrieved_indices[0, 1:]]
             distances.append(np.linalg.norm(query_embedding - first_embedding))
             distances = np.clip(np.array(distances), 0, self._max_dist) / self._max_dist
-            print(f'distances: {distances}')
+            # print(f'distances: {distances}')
             more_obs["exp_lamda_distances"] = np.exp(-self._lamda * distances).reshape(-1, 1)
-            print(f'exp_lamda_distances: {more_obs["exp_lamda_distances"]}')
+            # print(f'exp_lamda_distances: {more_obs["exp_lamda_distances"]}')
         return {**obs, **more_obs}
     
     def save_obs(self, obs: dict, date: str, prefix: str):
@@ -214,7 +231,7 @@ class RiclPolicy(BasePolicy):
         prefix = obs.pop("prefix", "temp")
         date = datetime.now().strftime("%m%d")
         # Retrieval
-        print()
+        #         print()
         logger.info(f'retrieving...')
         obs = self.retrieve(obs)
         # for debugging, save everything in obs
@@ -244,7 +261,7 @@ class RiclPolicy(BasePolicy):
         logger.info(f'unbatching...')
         outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
         final_outputs = self._output_transform(outputs)
-        print(f'final_outputs: {final_outputs}')
+        # print(f'final_outputs: {final_outputs}')
         # Attach retrieved context images for visualization
         for i in range(self._knn_k):
             key = f"retrieved_{i}_top_image"

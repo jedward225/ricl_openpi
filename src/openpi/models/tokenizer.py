@@ -229,19 +229,19 @@ class FASTTokenizerRicl:
             return np.zeros((action_horizon, action_dim), dtype=np.float32)
 
         # Extract actions from decoded tokens
-        print(f'decoded_tokens: {decoded_tokens}')
+        # print(f'decoded_tokens: {decoded_tokens}')
         raw_action_tokens = np.array(
             self._paligemma_tokenizer.encode(decoded_tokens.split("Action: ")[1].split("|")[0].strip())
         )
-        print(f'raw_action_tokens: {raw_action_tokens}')
+        # print(f'raw_action_tokens: {raw_action_tokens}')
         action_tokens = self._act_tokens_to_paligemma_tokens(raw_action_tokens)
-        print(f'action_tokens: {action_tokens}')
+        # print(f'action_tokens: {action_tokens}')
         outputs = self._fast_tokenizer.decode(
             [action_tokens.tolist()], time_horizon=action_horizon, action_dim=action_dim
         )
         assert outputs.shape == (1, action_horizon, action_dim), f"{outputs.shape=}"
         outputs = outputs[0]
-        print(f'outputs before normalization: {outputs}')
+        # print(f'outputs before normalization: {outputs}')
         return outputs
 
     def _act_tokens_to_paligemma_tokens(self, tokens: np.ndarray | list[int]) -> np.ndarray:

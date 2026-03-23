@@ -62,6 +62,13 @@ def load_ricl_policy(checkpoint_dir: str, demos_dir: str):
     from openpi.training import config as train_config
 
     config = train_config.get_config("pi0_fast_rlbench_ricl")
+    
+    import dataclasses
+    config = dataclasses.replace(
+        config,
+        model=dataclasses.replace(config.model, use_action_interpolation=False)
+    )
+    
     print(f"Loading RICL policy from: {checkpoint_dir}")
     print(f"Demos dir: {demos_dir}")
     policy = policy_config.create_trained_ricl_policy(config, checkpoint_dir, demos_dir)
@@ -283,6 +290,13 @@ def run_evaluation(args):
     results_path = os.path.join(args.output_dir, f"ricl_{timestamp}.json")
 
     for task_name in tasks:
+        # Rebuild KNN index with only this task's demos (within-task retrieval)
+        task_demos_dir = os.path.join(args.demos_dir, task_name)
+        if os.path.isdir(task_demos_dir):
+            policy.rebuild_index(task_demos_dir)
+        else:
+            print(f"WARNING: task demos dir not found: {task_demos_dir}, using global index")
+
         max_steps = TASK_MAX_STEPS.get(task_name, 200)
         print(f"\n{'='*60}")
         print(f"Task: {task_name} | Episodes: {args.episodes} | Max steps: {max_steps}")
