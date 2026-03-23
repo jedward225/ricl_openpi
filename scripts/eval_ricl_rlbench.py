@@ -56,19 +56,23 @@ def euler_to_quat(euler: np.ndarray) -> np.ndarray:
     return Rotation.from_euler('xyz', euler).as_quat()
 
 
-def load_ricl_policy(checkpoint_dir: str, demos_dir: str):
+def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False):
     """Load trained RICL policy."""
     from openpi.policies import policy_config
     from openpi.training import config as train_config
+    import dataclasses
 
     config = train_config.get_config("pi0_fast_rlbench_ricl")
-    
-    import dataclasses
-    config = dataclasses.replace(
-        config,
-        model=dataclasses.replace(config.model, use_action_interpolation=False)
-    )
-    
+
+    if no_interpolation:
+        config = dataclasses.replace(
+            config,
+            model=dataclasses.replace(config.model, use_action_interpolation=False)
+        )
+        print("Action interpolation: DISABLED")
+    else:
+        print("Action interpolation: ENABLED")
+
     print(f"Loading RICL policy from: {checkpoint_dir}")
     print(f"Demos dir: {demos_dir}")
     policy = policy_config.create_trained_ricl_policy(config, checkpoint_dir, demos_dir)
@@ -249,7 +253,7 @@ def run_evaluation(args):
     tasks = ALL_TASKS if args.task == "all" else [t.strip() for t in args.task.split(",")]
 
     # Load RICL policy
-    policy = load_ricl_policy(args.checkpoint, args.demos_dir)
+    policy = load_ricl_policy(args.checkpoint, args.demos_dir, no_interpolation=args.no_interpolation)
 
     # Setup RLBench
     print("Setting up RLBench environment...")
@@ -390,6 +394,8 @@ def main():
                         help="Episodes per task")
     parser.add_argument("--replan_steps", type=int, default=10,
                         help="Re-plan interval (default=action_horizon=10)")
+    parser.add_argument("--no_interpolation", action="store_true",
+                        help="Disable action interpolation at inference time")
     parser.add_argument("--save_video", action="store_true",
                         help="Save evaluation videos")
     parser.add_argument("--output_dir", type=str, default="./eval_results",
