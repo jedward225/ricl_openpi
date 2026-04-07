@@ -33,6 +33,8 @@ from rlbench_io import (
     extract_delta_action,
     extract_state,
     load_episode_data,
+    get_task_description,
+    SafeUnpickler,
 )
 
 # Add src to path for openpi imports
@@ -86,6 +88,22 @@ def load_all_frames(episode_path: str, camera: str, num_frames: int, target_size
     return np.stack(frames, axis=0)  # (T, H, W, 3)
 
 
+def _read_variation_index(episode_path: str) -> int:
+    pkl_path = os.path.join(episode_path, "low_dim_obs.pkl")
+    if not os.path.exists(pkl_path):
+        return 0
+    try:
+        with open(pkl_path, "rb") as f:
+            demo = SafeUnpickler(f).load()
+        obs0 = demo._observations[0]
+        misc = getattr(obs0, "misc", {})
+        if isinstance(misc, dict):
+            return misc.get("variation_index", 0)
+    except Exception:
+        pass
+    return 0
+
+
 def process_episode(
     episode_path: str,
     task: str,
@@ -132,8 +150,9 @@ def process_episode(
             assert embeddings.shape == (num_frames, EMBED_DIM), f"embeddings shape: {embeddings.shape}"
             processed[f"{ricl_key}_embeddings"] = embeddings
 
-    # Task prompt
-    processed["prompt"] = VLA_TASK_DESCRIPTIONS.get(task, task.replace("_", " "))
+    # Task prompt (variation-aware)
+    var_idx = _read_variation_index(episode_path)
+    processed["prompt"] = get_task_description(task, variation_index=var_idx)
 
     return processed
 
@@ -166,9 +185,29 @@ def main():
             logger.warning(f"No episodes found for {task}, skipping")
             continue
 
-        # Limit to num_episodes
-        episodes = episodes[: args.num_episodes]
-        logger.info(f"Found {len(episodes)} episodes (using first {args.num_episodes})")
+        # Balanced variation sampling
+        if args.num_episodes and args.num_episodes < len(episodes):
+            by_var = {}
+            for ep_path in episodes:
+                var = _read_variation_index(ep_path)
+                by_var.setdefault(var, []).append(ep_path)
+            if len(by_var) > 1:
+                import random
+                random.seed(42)
+                n_vars = len(by_var)
+                per_var = args.num_episodes // n_vars
+                remainder = args.num_episodes % n_vars
+                sampled = []
+                for i, (v, eps_list) in enumerate(sorted(by_var.items())):
+                    n = per_var + (1 if i < remainder else 0)
+                    sampled.extend(random.sample(eps_list, min(n, len(eps_list))))
+                episodes = sampled
+                logger.info(f"Balanced sampling: {len(episodes)} eps across {n_vars} variations")
+            else:
+                episodes = episodes[: args.num_episodes]
+                logger.info(f"Using first {len(episodes)} episodes (single variation)")
+        else:
+            logger.info(f"Using all {len(episodes)} episodes")
 
         for ep_idx, episode_path in enumerate(episodes):
             ep_name = os.path.basename(episode_path)
