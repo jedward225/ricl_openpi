@@ -47,6 +47,16 @@ from rlbench_io import VLA_TASK_DESCRIPTIONS, TASK_MAX_STEPS
 
 ALL_TASKS = list(VLA_TASK_DESCRIPTIONS.keys())
 
+# Per-task variation indices (matching data_v4 training distribution).
+TASK_VARIATIONS = {
+    "push_button": [0, 1, 2],
+    "push_buttons": [0, 1, 3],
+    "meat_on_grill": [0, 1],
+    "pick_up_cup": [0, 1, 2],
+    "open_drawer": [0, 1, 2],
+    "turn_tap": [0],
+}
+
 
 def quat_to_euler(quat: np.ndarray) -> np.ndarray:
     return Rotation.from_quat(quat).as_euler('xyz')
@@ -80,7 +90,7 @@ def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool
     return policy
 
 
-def get_observation_dict(obs, task_name: str) -> dict:
+def get_observation_dict(obs, task_name: str, prompt_override: str = None) -> dict:
     """Convert RLBench observation to RICL input format."""
     gripper_pose = obs.gripper_pose
     gripper_open = float(obs.gripper_open)
@@ -89,16 +99,14 @@ def get_observation_dict(obs, task_name: str) -> dict:
         gripper_pose[:3], euler, [gripper_open], [0.0]
     ]).astype(np.float32)
 
-    # Resize images from 256x256 to 224x224 for RICL
+    # Resize images from 256x256 to 224x224 for RICL (2 cameras only)
     front = np.array(Image.fromarray(obs.front_rgb).resize((224, 224)), dtype=np.uint8)
-    overhead = np.array(Image.fromarray(obs.overhead_rgb).resize((224, 224)), dtype=np.uint8)
     wrist = np.array(Image.fromarray(obs.wrist_rgb).resize((224, 224)), dtype=np.uint8)
 
-    prompt = VLA_TASK_DESCRIPTIONS.get(task_name, task_name.replace("_", " "))
+    prompt = prompt_override or VLA_TASK_DESCRIPTIONS.get(task_name, task_name.replace("_", " "))
 
     return {
         "query_top_image": front,
-        "query_right_image": overhead,
         "query_wrist_image": wrist,
         "query_state": state,
         "query_prompt": prompt,
@@ -189,9 +197,12 @@ def evaluate_episode(
     replan_steps: int = 10,
     video_recorder=None,
     debug: bool = False,
+    prompt_override: str = None,
 ) -> dict:
     """Evaluate a single episode with RICL policy."""
     descriptions, obs = env.reset()
+    # Use variation-specific description from RLBench
+    episode_prompt = prompt_override or (descriptions[0] if descriptions else None)
 
     if video_recorder:
         video_recorder.add_frame(obs)
@@ -206,7 +217,7 @@ def evaluate_episode(
     for step in range(max_steps):
         # Replan: get new action chunk
         if action_idx >= len(action_buffer):
-            obs_dict = get_observation_dict(obs, task_name)
+            obs_dict = get_observation_dict(obs, task_name, prompt_override=episode_prompt)
             result = policy.infer(obs_dict, debug=debug)
             actions = result["query_actions"]  # (action_horizon, 7)
             action_buffer = actions
@@ -314,6 +325,11 @@ def run_evaluation(args):
         episodes = []
 
         for ep in range(args.episodes):
+            # Set variation for this episode (matching eval_baseline.py)
+            var_indices = TASK_VARIATIONS.get(task_name, [0])
+            var_idx = var_indices[ep % len(var_indices)]
+            task.set_variation(var_idx)
+
             video_recorder = None
             if args.save_video:
                 video_path = os.path.join(
@@ -322,7 +338,7 @@ def run_evaluation(args):
                 )
                 video_recorder = VideoRecorder(video_path)
 
-            print(f"  Episode {ep + 1}/{args.episodes}", end="")
+            print(f"  Episode {ep + 1}/{args.episodes} (var={var_idx})", end="")
 
             try:
                 ep_result = evaluate_episode(

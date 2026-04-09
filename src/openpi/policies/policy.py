@@ -172,7 +172,7 @@ class RiclPolicy(BasePolicy):
         assert retrieved_indices.shape == (1, self._knn_k, 2), f"{retrieved_indices.shape=}"
         # collect retrieved info
         for ct, (ep_idx, step_idx) in enumerate(retrieved_indices[0]):
-            for key in ["state", "wrist_image", "top_image", "right_image"]:
+            for key in ["state", "wrist_image", "top_image"]:
                 more_obs[f"retrieved_{ct}_{key}"] = self._demos[ep_idx][key][step_idx]
             more_obs[f"retrieved_{ct}_actions"] = get_action_chunk_at_inference_time(self._demos[ep_idx]["actions"], step_idx, self._action_horizon)
             more_obs[f"retrieved_{ct}_prompt"] = self._demos[ep_idx]["prompt"].item()
@@ -191,18 +191,15 @@ class RiclPolicy(BasePolicy):
         fol = f"obs_logs/{date}/{prefix}"
         os.makedirs(fol, exist_ok=True)
         current_datettime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # save all images in one png
+        # save all images in one png (2 cameras: top + wrist)
         big_top_image = []
-        big_right_image = []
-        big_wrist_image = []    
+        big_wrist_image = []
         for ct in range(self._knn_k):
             big_top_image.append(obs[f"retrieved_{ct}_top_image"])
-            big_right_image.append(obs[f"retrieved_{ct}_right_image"])
             big_wrist_image.append(obs[f"retrieved_{ct}_wrist_image"])
         big_top_image.append(obs["query_top_image"])
-        big_right_image.append(obs["query_right_image"])
         big_wrist_image.append(obs["query_wrist_image"])
-        final_image = np.concatenate((np.concatenate(big_top_image, axis=1), np.concatenate(big_right_image, axis=1), np.concatenate(big_wrist_image, axis=1)), axis=0)
+        final_image = np.concatenate((np.concatenate(big_top_image, axis=1), np.concatenate(big_wrist_image, axis=1)), axis=0)
         Image.fromarray(final_image).save(f"{fol}/{current_datettime}.png")
         # save everything else to json
         with open(f"{fol}/{current_datettime}.json", "w") as f:

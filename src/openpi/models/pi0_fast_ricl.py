@@ -103,15 +103,13 @@ class Pi0FASTRiclConfig(_model.BaseModelConfig):
             observation_spec = _model.Observation(
                 images={
                     "base_0_rgb": image_spec,
-                    "base_1_rgb": image_spec,
-                    "wrist_0_rgb": image_spec,
+                    "left_wrist_0_rgb": image_spec,
                 },
                 image_masks={
                     "base_0_rgb": image_mask_spec,
-                    "base_1_rgb": image_mask_spec,
-                    "wrist_0_rgb": image_mask_spec,
+                    "left_wrist_0_rgb": image_mask_spec,
                 },
-                state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
+                state=jax.ShapeDtypeStruct([batch_size, 8], jnp.float32),  # [x,y,z,rx,ry,rz,gripper,pad]
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
                 tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
                 token_ar_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
