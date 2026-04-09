@@ -48,12 +48,10 @@ class RiclRLBenchInputs(transforms.DataTransformFn):
                 f"{prefix}state": data[f"{prefix}state"],
                 f"{prefix}image": {
                     "base_0_rgb": _parse_image(data[f"{prefix}top_image"]),
-                    "base_1_rgb": _parse_image(data[f"{prefix}right_image"]),
                     "left_wrist_0_rgb": _parse_image(data[f"{prefix}wrist_image"]),
                 },
                 f"{prefix}image_mask": {
                     "base_0_rgb": np.True_,
-                    "base_1_rgb": np.True_,
                     "left_wrist_0_rgb": np.True_,
                 },
             }

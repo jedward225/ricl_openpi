@@ -662,7 +662,7 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "/data/shared/models/pi0_fast_base/params"
         ),
-        num_train_steps=30_000,
+        num_train_steps=10_000,
         batch_size=16,
         freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
             action_dim=7, action_horizon=10, max_token_len=250,
@@ -673,7 +673,7 @@ _CONFIGS = [
         save_interval=5000,
         keep_period=5000,
         lr_schedule=_optimizer.CosineDecaySchedule(
-            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=25000, decay_lr=2.5e-6,
+            warmup_steps=300, peak_lr=2.5e-5, decay_steps=8000, decay_lr=2.5e-6,
         ),
     ),
     #

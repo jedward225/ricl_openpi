@@ -56,13 +56,13 @@ def euler_to_quat(euler: np.ndarray) -> np.ndarray:
     return Rotation.from_euler('xyz', euler).as_quat()
 
 
-def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False):
+def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False, config_name: str = None):
     """Load trained RICL policy."""
     from openpi.policies import policy_config
     from openpi.training import config as train_config
     import dataclasses
 
-    config = train_config.get_config("pi0_fast_rlbench_ricl")
+    config = train_config.get_config(config_name or "pi0_fast_rlbench_ricl")
 
     if no_interpolation:
         config = dataclasses.replace(
@@ -71,7 +71,7 @@ def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool
         )
         print("Action interpolation: DISABLED")
     else:
-        print("Action interpolation: ENABLED")
+        print(f"Action interpolation: {config.model.use_action_interpolation}")
 
     print(f"Loading RICL policy from: {checkpoint_dir}")
     print(f"Demos dir: {demos_dir}")
@@ -253,7 +253,8 @@ def run_evaluation(args):
     tasks = ALL_TASKS if args.task == "all" else [t.strip() for t in args.task.split(",")]
 
     # Load RICL policy
-    policy = load_ricl_policy(args.checkpoint, args.demos_dir, no_interpolation=args.no_interpolation)
+    policy = load_ricl_policy(args.checkpoint, args.demos_dir, no_interpolation=args.no_interpolation,
+                              config_name=getattr(args, 'config_name', None))
 
     # Setup RLBench
     print("Setting up RLBench environment...")
@@ -396,6 +397,8 @@ def main():
                         help="Re-plan interval (default=action_horizon=10)")
     parser.add_argument("--no_interpolation", action="store_true",
                         help="Disable action interpolation at inference time")
+    parser.add_argument("--config_name", type=str, default=None,
+                        help="Override config name (e.g. pi0_fast_rlbench_ricl_v4_no_interp)")
     parser.add_argument("--save_video", action="store_true",
                         help="Save evaluation videos")
     parser.add_argument("--output_dir", type=str, default="./eval_results",

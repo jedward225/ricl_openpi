@@ -49,9 +49,9 @@ ALL_TASKS = list(VLA_TASK_DESCRIPTIONS.keys())
 # Camera mapping: RLBench camera name → RICL field name
 CAMERA_MAP = {
     "front_rgb": "top_image",
-    "overhead_rgb": "right_image",
     "wrist_rgb": "wrist_image",
 }
+# overhead_rgb ("right_image") removed for 2-camera consistency with baseline/RoboRetry
 
 # Only compute DINOv2 embeddings for the main camera (used for KNN retrieval)
 EMBEDDING_CAMERA = "front_rgb"

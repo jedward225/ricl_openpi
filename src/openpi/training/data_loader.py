@@ -213,7 +213,6 @@ class RiclRLBenchDataset(Dataset):
             ep_idx, step_idx = int(ep_idx), int(step_idx)
             prefix = f"retrieved_{ct}_"
             data[f"{prefix}top_image"] = ep_data[ep_idx]["top_image"][step_idx]
-            data[f"{prefix}right_image"] = ep_data[ep_idx]["right_image"][step_idx]
             data[f"{prefix}wrist_image"] = ep_data[ep_idx]["wrist_image"][step_idx]
             data[f"{prefix}state"] = ep_data[ep_idx]["state"][step_idx]
             data[f"{prefix}actions"] = get_action_chunk_rlbench(
@@ -225,7 +224,6 @@ class RiclRLBenchDataset(Dataset):
         query_ep_idx, query_step_idx = int(query_ep_idx), int(query_step_idx)
         prefix = "query_"
         data[f"{prefix}top_image"] = ep_data[query_ep_idx]["top_image"][query_step_idx]
-        data[f"{prefix}right_image"] = ep_data[query_ep_idx]["right_image"][query_step_idx]
         data[f"{prefix}wrist_image"] = ep_data[query_ep_idx]["wrist_image"][query_step_idx]
         data[f"{prefix}state"] = ep_data[query_ep_idx]["state"][query_step_idx]
         data[f"{prefix}actions"] = get_action_chunk_rlbench(
