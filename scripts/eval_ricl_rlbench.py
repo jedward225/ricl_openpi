@@ -36,34 +36,18 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from scipy.spatial.transform import Rotation
 
 # Add src to path for OpenPI imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # Add shared to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 
-from rlbench_io import VLA_TASK_DESCRIPTIONS, TASK_MAX_STEPS
+from rlbench_io import (
+    VLA_TASK_DESCRIPTIONS, TASK_MAX_STEPS, TASK_VARIATIONS,
+    quat_to_euler, euler_to_quat, apply_delta_action, setup_episode,
+)
 
 ALL_TASKS = list(VLA_TASK_DESCRIPTIONS.keys())
-
-# Per-task variation indices (matching data_v4 training distribution).
-TASK_VARIATIONS = {
-    "push_button": [0, 1, 2],
-    "push_buttons": [0, 1, 3],
-    "meat_on_grill": [0, 1],
-    "pick_up_cup": [0, 1, 2],
-    "open_drawer": [0, 1, 2],
-    "turn_tap": [0],
-}
-
-
-def quat_to_euler(quat: np.ndarray) -> np.ndarray:
-    return Rotation.from_quat(quat).as_euler('xyz')
-
-
-def euler_to_quat(euler: np.ndarray) -> np.ndarray:
-    return Rotation.from_euler('xyz', euler).as_quat()
 
 
 def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False, config_name: str = None):
@@ -114,26 +98,7 @@ def get_observation_dict(obs, task_name: str, prompt_override: str = None) -> di
     }
 
 
-def apply_delta_action(env, action: np.ndarray, current_pose: np.ndarray):
-    """Apply delta EEF action."""
-    delta_pos = action[:3]
-    delta_euler = action[3:6]
-    gripper = action[6]
-
-    new_pos = current_pose[:3] + delta_pos
-    current_euler = quat_to_euler(current_pose[3:])
-    new_euler = current_euler + delta_euler
-    new_quat = euler_to_quat(new_euler)
-
-    gripper_action = 1.0 if gripper > 0.5 else 0.0
-    rlbench_action = np.concatenate([new_pos, new_quat, [gripper_action]])
-
-    try:
-        obs, reward, terminate = env.step(rlbench_action)
-        return obs, reward, terminate
-    except Exception as e:
-        print(f"  Action failed: {e}")
-        return None, 0, True
+    # apply_delta_action imported from shared/rlbench_io.py
 
 
 class VideoRecorder:
