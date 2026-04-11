@@ -34,6 +34,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import random
 import numpy as np
 from PIL import Image
 
@@ -290,6 +291,11 @@ def run_evaluation(args):
         episodes = []
 
         for ep in range(args.episodes):
+            # Fix scene determinism: seed per-episode so all models see same scene
+            ep_seed = args.seed * 10000 + ep
+            np.random.seed(ep_seed)
+            random.seed(ep_seed)
+
             # Set variation for this episode (matching eval_baseline.py)
             var_indices = TASK_VARIATIONS.get(task_name, [0])
             var_idx = var_indices[ep % len(var_indices)]
