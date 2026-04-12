@@ -370,38 +370,6 @@ def run_evaluation(args):
     env.shutdown()
 
 
-def _apply_yaml_config(args, config: dict):
-    """Apply YAML config values to argparse args (YAML takes precedence)."""
-    model_cfg = config.get("model", {})
-    eval_cfg = config.get("eval", {})
-    output_cfg = config.get("output", {})
-    env_cfg = config.get("environment", {})
-
-    if "checkpoint" in model_cfg:
-        args.checkpoint = model_cfg["checkpoint"]
-    if "config_name" in model_cfg:
-        args.config_name = model_cfg["config_name"]
-    if "demos_dir" in model_cfg:
-        args.demos_dir = model_cfg["demos_dir"]
-    if "no_interpolation" in model_cfg:
-        args.no_interpolation = model_cfg["no_interpolation"]
-
-    if "tasks" in eval_cfg:
-        args.task = ",".join(eval_cfg["tasks"])
-    if "episodes_per_task" in eval_cfg:
-        args.episodes = eval_cfg["episodes_per_task"]
-    if "seed" in eval_cfg:
-        args.seed = eval_cfg["seed"]
-
-    if "dir" in output_cfg:
-        args.output_dir = output_cfg["dir"]
-    if "save_video" in output_cfg:
-        args.save_video = output_cfg["save_video"]
-
-    if "headless" in env_cfg:
-        args.headless = env_cfg["headless"]
-
-
 def main():
     parser = argparse.ArgumentParser(description="Evaluate RICL on RLBench")
     parser.add_argument("--config", type=str, default=None,
@@ -420,14 +388,33 @@ def main():
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
 
-    args = parser.parse_args()
+    # Two-pass parsing: load YAML as defaults, CLI overrides
+    args_first, _ = parser.parse_known_args()
 
-    # Load YAML config if provided
-    if args.config:
+    if args_first.config:
         import yaml
-        with open(args.config) as f:
+        with open(args_first.config) as f:
             yaml_config = yaml.safe_load(f)
-        _apply_yaml_config(args, yaml_config)
+        model_cfg = yaml_config.get("model", {})
+        eval_cfg = yaml_config.get("eval", {})
+        output_cfg = yaml_config.get("output", {})
+        env_cfg = yaml_config.get("environment", {})
+
+        yaml_defaults = {}
+        if "checkpoint" in model_cfg: yaml_defaults["checkpoint"] = model_cfg["checkpoint"]
+        if "config_name" in model_cfg: yaml_defaults["config_name"] = model_cfg["config_name"]
+        if "demos_dir" in model_cfg: yaml_defaults["demos_dir"] = model_cfg["demos_dir"]
+        if "no_interpolation" in model_cfg and model_cfg["no_interpolation"]: yaml_defaults["no_interpolation"] = True
+        if "tasks" in eval_cfg: yaml_defaults["task"] = ",".join(eval_cfg["tasks"])
+        if "episodes_per_task" in eval_cfg: yaml_defaults["episodes"] = eval_cfg["episodes_per_task"]
+        if "seed" in eval_cfg: yaml_defaults["seed"] = eval_cfg["seed"]
+        if "dir" in output_cfg: yaml_defaults["output_dir"] = output_cfg["dir"]
+        if "save_video" in output_cfg and output_cfg["save_video"]: yaml_defaults["save_video"] = True
+        if "headless" in env_cfg: yaml_defaults["headless"] = env_cfg["headless"]
+
+        parser.set_defaults(**yaml_defaults)
+
+    args = parser.parse_args()
 
     if not args.checkpoint:
         parser.error("--checkpoint is required (or set model.checkpoint in YAML config)")
