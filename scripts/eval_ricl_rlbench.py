@@ -370,38 +370,72 @@ def run_evaluation(args):
     env.shutdown()
 
 
+def _apply_yaml_config(args, config: dict):
+    """Apply YAML config values to argparse args (YAML takes precedence)."""
+    model_cfg = config.get("model", {})
+    eval_cfg = config.get("eval", {})
+    output_cfg = config.get("output", {})
+    env_cfg = config.get("environment", {})
+
+    if "checkpoint" in model_cfg:
+        args.checkpoint = model_cfg["checkpoint"]
+    if "config_name" in model_cfg:
+        args.config_name = model_cfg["config_name"]
+    if "demos_dir" in model_cfg:
+        args.demos_dir = model_cfg["demos_dir"]
+    if "no_interpolation" in model_cfg:
+        args.no_interpolation = model_cfg["no_interpolation"]
+
+    if "tasks" in eval_cfg:
+        args.task = ",".join(eval_cfg["tasks"])
+    if "episodes_per_task" in eval_cfg:
+        args.episodes = eval_cfg["episodes_per_task"]
+    if "seed" in eval_cfg:
+        args.seed = eval_cfg["seed"]
+
+    if "dir" in output_cfg:
+        args.output_dir = output_cfg["dir"]
+    if "save_video" in output_cfg:
+        args.save_video = output_cfg["save_video"]
+
+    if "headless" in env_cfg:
+        args.headless = env_cfg["headless"]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate RICL on RLBench")
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to trained RICL checkpoint dir")
-    parser.add_argument("--demos_dir", type=str, default="./processed_rlbench",
-                        help="Path to processed demo dir (for KNN retrieval)")
-    parser.add_argument("--task", type=str, default="all",
-                        help="Task name or 'all'")
-    parser.add_argument("--episodes", type=int, default=25,
-                        help="Episodes per task")
-    parser.add_argument("--replan_steps", type=int, default=10,
-                        help="Re-plan interval (default=action_horizon=10)")
-    parser.add_argument("--no_interpolation", action="store_true",
-                        help="Disable action interpolation at inference time")
-    parser.add_argument("--config_name", type=str, default=None,
-                        help="Override config name (e.g. pi0_fast_rlbench_ricl_v4_no_interp)")
-    parser.add_argument("--save_video", action="store_true",
-                        help="Save evaluation videos")
-    parser.add_argument("--output_dir", type=str, default="./eval_results",
-                        help="Output directory")
+    parser.add_argument("--config", type=str, default=None,
+                        help="YAML config file (overrides CLI args)")
+    parser.add_argument("--checkpoint", type=str, default=None)
+    parser.add_argument("--demos_dir", type=str, default="./processed_rlbench")
+    parser.add_argument("--task", type=str, default="all")
+    parser.add_argument("--episodes", type=int, default=25)
+    parser.add_argument("--replan_steps", type=int, default=10)
+    parser.add_argument("--no_interpolation", action="store_true")
+    parser.add_argument("--config_name", type=str, default=None)
+    parser.add_argument("--save_video", action="store_true")
+    parser.add_argument("--output_dir", type=str, default="./eval_results")
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument("--display", action="store_true")
-    parser.add_argument("--debug", action="store_true",
-                        help="Save obs/tokenized inputs for debugging")
+    parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
 
     args = parser.parse_args()
+
+    # Load YAML config if provided
+    if args.config:
+        import yaml
+        with open(args.config) as f:
+            yaml_config = yaml.safe_load(f)
+        _apply_yaml_config(args, yaml_config)
+
+    if not args.checkpoint:
+        parser.error("--checkpoint is required (or set model.checkpoint in YAML config)")
+
     if args.display:
         args.headless = False
 
     np.random.seed(args.seed)
-    import random
     random.seed(args.seed)
 
     run_evaluation(args)
