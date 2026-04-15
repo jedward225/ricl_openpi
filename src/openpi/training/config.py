@@ -643,6 +643,41 @@ _CONFIGS = [
         lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=50, peak_lr=2.5e-5, decay_steps=1_000, decay_lr=2.5e-6),
     ),
     TrainConfig(
+        # RICL with action interpolation on data_v4 (12 tasks, N=25)
+        # For C1 comparison: RICL with interp should also underperform baseline in within-task setting
+        name="pi0_fast_rlbench_ricl_v4_with_interp",
+        processed_dir="./processed_rlbench_v4",
+        model=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=250,
+            num_retrieved_observations=4,
+            use_action_interpolation=True,
+            lamda=10.0,
+        ),
+        data=RiclRLBenchDataConfig(
+            repo_id=None,
+            assets=AssetsConfig(asset_id="rlbench_v4"),
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data/shared/models/pi0_fast_base/params"
+        ),
+        num_train_steps=30_000,
+        batch_size=16,
+        freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7, action_horizon=10, max_token_len=250,
+            num_retrieved_observations=4, use_action_interpolation=True, lamda=10.0,
+        ).get_freeze_filter_with_frozen_img_encoder(),
+        ema_decay=None,
+        log_interval=1,
+        save_interval=5000,
+        keep_period=5000,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=30_000, decay_lr=2.5e-6,
+        ),
+    ),
+    TrainConfig(
         # RICL no-interpolation on data_v4 (12 tasks, N=25)
         name="pi0_fast_rlbench_ricl_v4_no_interp",
         processed_dir="./processed_rlbench_v4",
