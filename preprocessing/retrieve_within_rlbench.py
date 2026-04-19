@@ -140,6 +140,12 @@ def retrieval_preprocessing(
                 global_max_distance = max(global_max_distance, ep_max)
                 continue
 
+            # # 临时hack：如果存在就删除，然后继续执行（不跳过）
+            # if os.path.exists(output_path):
+            #     logger.info(f"  [{ep_count+1}/{num_episodes}] Episode {ep_idx} — exists, removing and reprocessing (TEMPORARY HACK)")
+            #     os.remove(output_path)
+            #     # 不continue，让代码继续执行下面的处理逻辑
+
             # Separate this episode from others
             other_mask = np.array([idx[0] != ep_idx for idx in all_indices])
             this_mask = ~other_mask
