@@ -682,7 +682,7 @@ _CONFIGS = [
             warmup_steps=300, peak_lr=2.5e-5, decay_steps=15000, decay_lr=2.5e-6,
         ),
         # Set to True if enable random sampling
-        random_sample=True,
+        random_sample=False,
     ),
     #
     # Fine-tuning Libero configs.

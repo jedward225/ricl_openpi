@@ -17,7 +17,6 @@ python preprocessing/random_sample_within_rlbench.py \
 # 3. 计算 norm stats
 # Origin (KNN retrieve)
 python scripts/compute_norm_stats_rlbench.py --processed_dir ./processed_rlbench
-# Random sample
 
 # 4. 训练
 # Adjust random_sample in src/openpi/training/config.py to enable random sampling.
@@ -25,7 +24,12 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
 uv run scripts/train_ricl_rlbench.py --exp_name=rlbench_ricl_n{25,50}
 
 # 5. 评测
+# Origin (KNN retrieve)
 python scripts/eval_ricl_rlbench.py \
     --checkpoint ./checkpoints/.../latest --demos_dir ./processed_rlbench \
     --task all --episodes 25 --save_video
+# Random sample
+python scripts/eval_ricl_rlbench.py \
+    --checkpoint ./checkpoints/.../latest --demos_dir ./processed_rlbench \
+    --task all --episodes 25 --save_video --random
 ```

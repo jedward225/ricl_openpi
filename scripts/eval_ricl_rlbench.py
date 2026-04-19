@@ -56,7 +56,7 @@ def euler_to_quat(euler: np.ndarray) -> np.ndarray:
     return Rotation.from_euler('xyz', euler).as_quat()
 
 
-def load_ricl_policy(checkpoint_dir: str, demos_dir: str):
+def load_ricl_policy(checkpoint_dir: str, demos_dir: str, random: bool = False):
     """Load trained RICL policy."""
     from openpi.policies import policy_config
     from openpi.training import config as train_config
@@ -64,7 +64,11 @@ def load_ricl_policy(checkpoint_dir: str, demos_dir: str):
     config = train_config.get_config("pi0_fast_rlbench_ricl")
     print(f"Loading RICL policy from: {checkpoint_dir}")
     print(f"Demos dir: {demos_dir}")
-    policy = policy_config.create_trained_ricl_policy(config, checkpoint_dir, demos_dir)
+    if random:
+        print("Using random sampling instead of KNN retrieval.")
+        policy = policy_config.create_trained_ricl_random_policy(config, checkpoint_dir, demos_dir)
+    else:
+        policy = policy_config.create_trained_ricl_policy(config, checkpoint_dir, demos_dir)
     print("RICL policy loaded.")
     return policy
 
@@ -242,7 +246,7 @@ def run_evaluation(args):
     tasks = ALL_TASKS if args.task == "all" else [t.strip() for t in args.task.split(",")]
 
     # Load RICL policy
-    policy = load_ricl_policy(args.checkpoint, args.demos_dir)
+    policy = load_ricl_policy(args.checkpoint, args.demos_dir, args.random)
 
     # Setup RLBench
     print("Setting up RLBench environment...")
@@ -381,6 +385,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="./eval_results",
                         help="Output directory")
     parser.add_argument("--headless", action="store_true", default=True)
+    parser.add_argument("--random", action="store_true", default=False)
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--debug", action="store_true",
                         help="Save obs/tokenized inputs for debugging")
