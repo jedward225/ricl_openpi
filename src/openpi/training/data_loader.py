@@ -126,7 +126,7 @@ class RiclRLBenchDataset(Dataset):
     observations + query observation in RICL format.
     """
 
-    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, processed_dir: str):
+    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, processed_dir: str, random_sample: bool = False):
         num_retrieved_observations = model_config.num_retrieved_observations
 
         # Load episode mappings
@@ -143,6 +143,8 @@ class RiclRLBenchDataset(Dataset):
         for group_name, ep_fols in collected_demos_infos["groups_to_ep_fols"].items():
             for ep_fol in ep_fols:
                 idx_path = os.path.join(ep_fol, "indices_and_distances.npz")
+                if random_sample:
+                    idx_path = os.path.join(ep_fol, "indices_and_distances_random.npz")
                 indices_and_dists = np.load(idx_path)
                 query_indices = indices_and_dists["query_indices"]
                 retrieved_indices = indices_and_dists["retrieved_indices"][:, :num_retrieved_observations, :]
@@ -245,7 +247,7 @@ class RiclRLBenchDataset(Dataset):
 
 
 class Pi0FastDroidFinetuneDataset(Dataset):
-    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, finetuning_collected_demos_dir: str | None):
+    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, finetuning_collected_demos_dir: str | None, random_sample: bool = False):
         assert finetuning_collected_demos_dir is not None
         collected_demos_infos = {k: json.load(open(f"{finetuning_collected_demos_dir}/{k}.json")) for k in ['ep_idxs_to_fol', 'fols_to_ep_idxs', 'groups_to_ep_fols', 'groups_to_ep_idxs']}
         
@@ -253,7 +255,10 @@ class Pi0FastDroidFinetuneDataset(Dataset):
         indices_files = [] 
         for group_name, ep_fols in collected_demos_infos["groups_to_ep_fols"].items():
             for ep_fol in ep_fols:
-                indices_files.append(f"ricl_droid_preprocessing/{ep_fol}/indices_and_distances.npz")
+                if random_sample:
+                    indices_files.append(f"ricl_droid_preprocessing/{ep_fol}/indices_and_distances_random.npz")
+                else:
+                    indices_files.append(f"ricl_droid_preprocessing/{ep_fol}/indices_and_distances.npz")
         
         # actual loading...
         count_collected_demos = 0
@@ -306,13 +311,17 @@ class Pi0FastDroidFinetuneDataset(Dataset):
 
 
 class RiclDroidDataset(Dataset):
-    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, finetuning_collected_demos_dir: str | None):
+    def __init__(self, model_config: _pi0_fast_ricl.Pi0FASTRiclConfig, finetuning_collected_demos_dir: str | None, random_sample: bool = False):
         # setup
         num_retrieved_observations = model_config.num_retrieved_observations
         knn_k = 100
         assert num_retrieved_observations <= knn_k
         embedding_type = "embeddings__wrist_image_left" # retrieval based on embeddings of wrist images
-        indices_and_dists_fol = f"ricl_droid_preprocessing/droid_new_broken_up_indices_and_distances/chosenIDscene_id_numepisodes20_embtype{embedding_type}_knnk100"
+        if random_sample:
+            print("Using random-sample retrieval instead of KNN retrieval")
+            indices_and_dists_fol = f"ricl_droid_preprocessing/droid_new_broken_up_indices_and_distances_random/chosenIDscene_id_numepisodes20_embtype{embedding_type}_knnk100"
+        else:
+            indices_and_dists_fol = f"ricl_droid_preprocessing/droid_new_broken_up_indices_and_distances/chosenIDscene_id_numepisodes20_embtype{embedding_type}_knnk100"
         outer_dir = "ricl_droid_preprocessing/collected_demos_training" if finetuning_collected_demos_dir is None else finetuning_collected_demos_dir
         collected_demos_infos = {k: json.load(open(f"{outer_dir}/{k}.json")) for k in ['ep_idxs_to_fol', 'fols_to_ep_idxs', 'groups_to_ep_fols', 'groups_to_ep_idxs']}
         # load indices_and_dists
@@ -328,7 +337,10 @@ class RiclDroidDataset(Dataset):
         # files from the collected demos for training
         for group_name, ep_fols in collected_demos_infos["groups_to_ep_fols"].items():
             for ep_fol in ep_fols:
-                indices_files.append(f"ricl_droid_preprocessing/{ep_fol}/indices_and_distances.npz")
+                if random_sample:
+                    indices_files.append(f"ricl_droid_preprocessing/{ep_fol}/indices_and_distances_random.npz")
+                else:
+                    indices_files.append(f"ricl_droid_preprocessing/{ep_fol}/indices_and_distances.npz")
         # actual loading...
         count_droid = 0
         count_collected_demos = 0
@@ -516,13 +528,14 @@ def create_data_loader(
             execute in the main process.
     """
     data_config = config.data.create(config.assets_dirs, config.model)
+    random_sample = config.random_sample
 
     if "rlbench_ricl" in config.name:
-        dataset = RiclRLBenchDataset(config.model, config.processed_dir)
+        dataset = RiclRLBenchDataset(config.model, config.processed_dir, random_sample=random_sample)
     elif "ricl" in config.name:
-        dataset = RiclDroidDataset(config.model, config.finetuning_collected_demos_dir)
+        dataset = RiclDroidDataset(config.model, config.finetuning_collected_demos_dir, random_sample=random_sample)
     elif "pi0_fast_droid___finetune_on_" in config.name:
-        dataset = Pi0FastDroidFinetuneDataset(config.model, config.finetuning_collected_demos_dir)
+        dataset = Pi0FastDroidFinetuneDataset(config.model, config.finetuning_collected_demos_dir, random_sample=random_sample)
     else:
         dataset = create_dataset(data_config, config.model)
     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
