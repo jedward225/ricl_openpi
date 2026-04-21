@@ -128,3 +128,59 @@ def create_trained_ricl_policy(
         lamda=train_config.model.lamda,
         action_horizon=train_config.model.action_horizon,
     )
+
+def create_trained_ricl_random_policy(
+    train_config: _config.TrainConfig,
+    checkpoint_dir: str,
+    demos_dir: str,
+    norm_stats: dict[str, transforms.NormStats] | None = None,
+) -> _policy.RiclRandomPolicy:
+    """Create a ricl random baseline policy from a trained checkpoint.
+
+    This is identical to create_trained_ricl_policy except:
+        - replaces KNN retrieval with uniform random sampling
+    """
+
+    logging.info("Loading model...")
+
+    model = train_config.model.load(
+        _model.restore_params(f"{checkpoint_dir}/params", dtype=jnp.bfloat16)
+    )
+
+    data_config = train_config.data.create(
+        train_config.assets_dirs,
+        train_config.model
+    )
+
+    if norm_stats is None:
+        if data_config.asset_id is None:
+            raise ValueError("Asset id is required to load norm stats.")
+        norm_stats = _checkpoints.load_norm_stats(
+            f"{checkpoint_dir}/assets",
+            data_config.asset_id,
+        )
+
+    return _policy.RiclRandomPolicy(
+        model,
+        transforms=[
+            *data_config.data_transforms.inputs,
+            transforms.Normalize(
+                norm_stats,
+                use_quantiles=data_config.use_quantile_norm,
+            ),
+            *data_config.model_transforms.inputs,
+        ],
+        output_transforms=[
+            *data_config.model_transforms.outputs,
+            transforms.UnnormalizeRicl(
+                norm_stats,
+                use_quantiles=data_config.use_quantile_norm,
+            ),
+            *data_config.data_transforms.outputs,
+        ],
+        metadata=train_config.policy_metadata,
+        demos_dir=demos_dir,
+        use_action_interpolation=train_config.model.use_action_interpolation,
+        lamda=train_config.model.lamda,
+        action_horizon=train_config.model.action_horizon,
+    )

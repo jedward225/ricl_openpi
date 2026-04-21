@@ -271,6 +271,179 @@ class RiclPolicy(BasePolicy):
         return self._metadata
 
 
+class RiclRandomPolicy(_base_policy.BasePolicy):
+    """
+    Random-sampling baseline version of RiclPolicy.
+
+    Difference:
+        - replaces FAISS KNN retrieval with uniform random sampling
+        - everything else identical (logging, formatting, interpolation, saving)
+    """
+
+    def __init__(
+        self,
+        model: _pi0_fast_ricl.Pi0FASTRicl,
+        *,
+        rng: at.KeyArrayLike | None = None,
+        transforms=(),
+        output_transforms=(),
+        sample_kwargs=None,
+        metadata=None,
+        demos_dir: str | None = None,
+        use_action_interpolation: bool | None = None,
+        lamda: float | None = None,
+        action_horizon: int | None = None,
+    ):
+        self._sample_actions = nnx_utils.module_jit(model.sample_actions)
+        self._input_transform = _transforms.compose(transforms)
+        self._output_transform = _transforms.compose(output_transforms)
+
+        self._rng = rng or jax.random.key(0)
+        self._sample_kwargs = sample_kwargs or {}
+        self._metadata = metadata or {}
+
+        self._model = model
+        self._use_action_interpolation = use_action_interpolation
+        self._lamda = lamda
+        self._action_horizon = action_horizon
+
+        # -------------------------
+        # load demos
+        # -------------------------
+        logger.info(f'loading demos from {demos_dir}...')
+        demo_paths = []
+        for root, _, files in os.walk(demos_dir):
+            if "processed_demo.npz" in files:
+                demo_paths.append(os.path.join(root, "processed_demo.npz"))
+        demo_paths.sort()
+
+        self._demos = {
+            i: np.load(p) for i, p in enumerate(demo_paths)
+        }
+
+        self._all_indices = np.array([
+            (ep, t)
+            for ep in self._demos
+            for t in range(self._demos[ep]["actions"].shape[0])
+        ])
+
+        self._knn_k = self._model.num_retrieved_observations
+
+        # flatten embeddings (same as original)
+        _all_embeddings = np.concatenate([
+            self._demos[i]["top_image_embeddings"]
+            for i in self._demos
+        ])
+
+        assert _all_embeddings.shape[0] == len(self._all_indices)
+
+        self._all_embeddings = _all_embeddings
+
+        logger.info(f"loaded {len(self._demos)} demos, {len(self._all_indices)} embeddings")
+
+        # dinov2
+        logger.info("loading dinov2...")
+        self._dinov2 = load_dinov2()
+
+        # max distance
+        max_dist_path = f"{demos_dir}/max_distance.json" if demos_dir else "assets/max_distance.json"
+        max_dist_data = json.load(open(max_dist_path, "r"))
+
+        if "max_distance" in max_dist_data:
+            self._max_dist = max_dist_data["max_distance"]
+        else:
+            self._max_dist = max_dist_data["distances"]["max"]
+
+        logger.info(f"max dist = {self._max_dist}")
+
+    # =========================================================
+    # 🔥 ONLY CHANGE: retrieval becomes RANDOM sampling
+    # =========================================================
+    def retrieve(self, obs: dict) -> dict:
+        more_obs = {"inference_time": True}
+
+        # embed query
+        query_embedding = embed(obs["query_top_image"], self._dinov2)
+        assert query_embedding.shape == (1, EMBED_DIM)
+
+        num_candidates = len(self._all_indices)
+        k = self._knn_k
+
+        # split query vs candidates (keep same semantics as KNN version)
+        query_idx = np.random.randint(0, num_candidates, size=k)
+        retrieved_indices = self._all_indices[query_idx][None, :, :]
+
+        assert retrieved_indices.shape == (1, k, 2)
+
+        # collect retrieved info
+        for ct, (ep_idx, step_idx) in enumerate(retrieved_indices[0]):
+            for key in ["state", "wrist_image", "top_image", "right_image"]:
+                more_obs[f"retrieved_{ct}_{key}"] = self._demos[ep_idx][key][step_idx]
+
+            more_obs[f"retrieved_{ct}_actions"] = self._demos[ep_idx]["actions"][step_idx:step_idx+1]
+            more_obs[f"retrieved_{ct}_prompt"] = self._demos[ep_idx]["prompt"].item()
+
+        # -------------------------------------------------
+        # SAME distance logic (unchanged semantics)
+        # -------------------------------------------------
+        if self._use_action_interpolation:
+            first_ep, first_step = retrieved_indices[0, 0]
+            first_embedding = self._demos[first_ep]["top_image_embeddings"][first_step]
+
+            distances = [0.0]
+
+            for ep_idx, step_idx in retrieved_indices[0, 1:]:
+                dist = np.linalg.norm(
+                    self._demos[ep_idx]["top_image_embeddings"][step_idx] - first_embedding
+                )
+                distances.append(dist)
+
+            query_dist = np.linalg.norm(query_embedding - first_embedding)
+            distances.append(query_dist)
+
+            distances = np.clip(np.array(distances), 0, self._max_dist) / self._max_dist
+
+            more_obs["exp_lamda_distances"] = np.exp(-self._lamda * distances).reshape(-1, 1)
+
+        return {**obs, **more_obs}
+
+    # =========================================================
+    # rest unchanged
+    # =========================================================
+    def infer(self, obs: dict, debug: bool = True):
+        prefix = obs.pop("prefix", "temp")
+        date = datetime.now().strftime("%m%d")
+
+        obs = self.retrieve(obs)
+
+        inputs = jax.tree.map(lambda x: x, obs)
+        inputs = self._input_transform(inputs)
+
+        inputs = jax.tree.map(lambda x: jnp.asarray(x)[None, ...], inputs)
+
+        self._rng, rng = jax.random.split(self._rng)
+
+        outputs = {
+            "query_state": inputs["query_state"],
+            "query_actions": self._sample_actions(
+                rng,
+                _pi0_fast_ricl.RiclObservation.from_dict(
+                    inputs,
+                    num_retrieved_observations=self._knn_k,
+                ),
+                **self._sample_kwargs,
+            ),
+        }
+
+        outputs = jax.tree.map(lambda x: np.asarray(x[0]), outputs)
+
+        return self._output_transform(outputs)
+
+    @property
+    def metadata(self):
+        return self._metadata
+
+
 class PolicyRecorder(_base_policy.BasePolicy):
     """Records the policy's behavior to disk."""
 

@@ -51,7 +51,15 @@ from rlbench_io import (
 ALL_TASKS = list(VLA_TASK_DESCRIPTIONS.keys())
 
 
-def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False, config_name: str = None):
+def quat_to_euler(quat: np.ndarray) -> np.ndarray:
+    return Rotation.from_quat(quat).as_euler('xyz')
+
+
+def euler_to_quat(euler: np.ndarray) -> np.ndarray:
+    return Rotation.from_euler('xyz', euler).as_quat()
+
+
+def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False, config_name: str = None, random: bool = False):
     """Load trained RICL policy."""
     from openpi.policies import policy_config
     from openpi.training import config as train_config
@@ -70,7 +78,11 @@ def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool
 
     print(f"Loading RICL policy from: {checkpoint_dir}")
     print(f"Demos dir: {demos_dir}")
-    policy = policy_config.create_trained_ricl_policy(config, checkpoint_dir, demos_dir)
+    if random:
+        print("Using random sampling instead of KNN retrieval.")
+        policy = policy_config.create_trained_ricl_random_policy(config, checkpoint_dir, demos_dir)
+    else:
+        policy = policy_config.create_trained_ricl_policy(config, checkpoint_dir, demos_dir)
     print("RICL policy loaded.")
     return policy
 
@@ -230,8 +242,12 @@ def run_evaluation(args):
     tasks = ALL_TASKS if args.task == "all" else [t.strip() for t in args.task.split(",")]
 
     # Load RICL policy
-    policy = load_ricl_policy(args.checkpoint, args.demos_dir, no_interpolation=args.no_interpolation,
-                              config_name=getattr(args, 'config_name', None))
+    policy = load_ricl_policy(
+        args.checkpoint, args.demos_dir,
+        no_interpolation=getattr(args, 'no_interpolation', False),
+        config_name=getattr(args, 'config_name', None),
+        random=getattr(args, 'random', False),
+    )
 
     # Setup RLBench
     print("Setting up RLBench environment...")
@@ -384,6 +400,7 @@ def main():
     parser.add_argument("--save_video", action="store_true")
     parser.add_argument("--output_dir", type=str, default="./eval_results")
     parser.add_argument("--headless", action="store_true", default=True)
+    parser.add_argument("--random", action="store_true", default=False)
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=42)

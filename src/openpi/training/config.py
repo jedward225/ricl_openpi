@@ -511,6 +511,9 @@ class TrainConfig:
     # If true, will enable wandb logging.
     wandb_enabled: bool = True
 
+    # If true, randomly sample items instead of KNN retrieval.
+    random_sample: bool = False
+
     # Used to pass metadata to the policy server.
     policy_metadata: dict[str, Any] | None = None
 
@@ -747,6 +750,8 @@ _CONFIGS = [
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1000, peak_lr=2.5e-5, decay_steps=30_000, decay_lr=2.5e-6,
         ),
+        # Set to True if enable random sampling
+        random_sample=False,
     ),
     #
     # Fine-tuning Libero configs.
