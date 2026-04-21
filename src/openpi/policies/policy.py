@@ -380,7 +380,7 @@ class RiclRandomPolicy(_base_policy.BasePolicy):
             for key in ["state", "wrist_image", "top_image"]:  # v4 uses 2 cameras (front + wrist); match KNN retrieve (line 175)
                 more_obs[f"retrieved_{ct}_{key}"] = self._demos[ep_idx][key][step_idx]
 
-            more_obs[f"retrieved_{ct}_actions"] = self._demos[ep_idx]["actions"][step_idx:step_idx+1]
+            more_obs[f"retrieved_{ct}_actions"] = get_action_chunk_at_inference_time(self._demos[ep_idx]["actions"], step_idx, self._action_horizon)
             more_obs[f"retrieved_{ct}_prompt"] = self._demos[ep_idx]["prompt"].item()
 
         # -------------------------------------------------
@@ -427,7 +427,7 @@ class RiclRandomPolicy(_base_policy.BasePolicy):
             "query_state": inputs["query_state"],
             "query_actions": self._sample_actions(
                 rng,
-                _pi0_fast_ricl.RiclObservation.from_dict(
+                _model.RiclObservation.from_dict(  # RiclObservation lives in openpi.models.model, not pi0_fast_ricl
                     inputs,
                     num_retrieved_observations=self._knn_k,
                 ),
