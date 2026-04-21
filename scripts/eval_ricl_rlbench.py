@@ -51,14 +51,6 @@ from rlbench_io import (
 ALL_TASKS = list(VLA_TASK_DESCRIPTIONS.keys())
 
 
-def quat_to_euler(quat: np.ndarray) -> np.ndarray:
-    return Rotation.from_quat(quat).as_euler('xyz')
-
-
-def euler_to_quat(euler: np.ndarray) -> np.ndarray:
-    return Rotation.from_euler('xyz', euler).as_quat()
-
-
 def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False, config_name: str = None, random: bool = False):
     """Load trained RICL policy."""
     from openpi.policies import policy_config
