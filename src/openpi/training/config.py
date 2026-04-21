@@ -678,6 +678,43 @@ _CONFIGS = [
         ),
     ),
     TrainConfig(
+        # RICL-Random: no-interp + RANDOM sampling (vs KNN in v4_no_interp).
+        # 2x2 factorial cell (Success-context, Random-sampling) for paper Table 1.
+        # Matches v4_no_interp hyperparameters exactly; only processed_dir differs.
+        name="pi0_fast_rlbench_ricl_v4_no_interp_random",
+        processed_dir="./processed_rlbench_v4_random",
+        checkpoint_base_dir="/data/jiajun/checkpoints",
+        model=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=250,
+            num_retrieved_observations=4,
+            use_action_interpolation=False,
+            lamda=10.0,
+        ),
+        data=RiclRLBenchDataConfig(
+            repo_id=None,
+            assets=AssetsConfig(asset_id="rlbench_v4"),
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data/shared/models/pi0_fast_base/params"
+        ),
+        num_train_steps=30_000,
+        batch_size=16,
+        freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7, action_horizon=10, max_token_len=250,
+            num_retrieved_observations=4, use_action_interpolation=False, lamda=10.0,
+        ).get_freeze_filter_with_frozen_img_encoder(),
+        ema_decay=None,
+        log_interval=1,
+        save_interval=5000,
+        keep_period=5000,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=30_000, decay_lr=2.5e-6,
+        ),
+    ),
+    TrainConfig(
         # RICL no-interpolation on data_v4 (12 tasks, N=25)
         name="pi0_fast_rlbench_ricl_v4_no_interp",
         processed_dir="./processed_rlbench_v4",
