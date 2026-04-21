@@ -377,7 +377,7 @@ class RiclRandomPolicy(_base_policy.BasePolicy):
 
         # collect retrieved info
         for ct, (ep_idx, step_idx) in enumerate(retrieved_indices[0]):
-            for key in ["state", "wrist_image", "top_image", "right_image"]:
+            for key in ["state", "wrist_image", "top_image"]:  # v4 uses 2 cameras (front + wrist); match KNN retrieve (line 175)
                 more_obs[f"retrieved_{ct}_{key}"] = self._demos[ep_idx][key][step_idx]
 
             more_obs[f"retrieved_{ct}_actions"] = self._demos[ep_idx]["actions"][step_idx:step_idx+1]
