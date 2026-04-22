@@ -437,7 +437,12 @@ class RiclRandomPolicy(_base_policy.BasePolicy):
 
         outputs = jax.tree.map(lambda x: np.asarray(x[0]), outputs)
 
-        return self._output_transform(outputs)
+        final_outputs = self._output_transform(outputs)
+        for i in range(self._knn_k):
+            key = f"retrieved_{i}_top_image"
+            if key in obs:
+                final_outputs[key] = obs[key]
+        return final_outputs
 
     @property
     def metadata(self):
