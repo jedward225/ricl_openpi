@@ -753,6 +753,89 @@ _CONFIGS = [
         # Set to True if enable random sampling
         random_sample=False,
     ),
+    TrainConfig(
+        # RICL no-interp initialized from M1 Baseline (pi0fast_baseline_v4_n25_unified/9999)
+        # Mirrors the RICL paper recipe: start from a task-proficient base, add ~hundreds of
+        # steps of context-use training. Same data + processed_dir + assets as the
+        # from-base v4_no_interp config, only weight init + step budget differ.
+        name="pi0_fast_rlbench_ricl_v4_no_interp_from_m1",
+        processed_dir="./processed_rlbench_v4",
+        checkpoint_base_dir="/data/jiajun/checkpoints/ricl_v4_from_m1",
+        model=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=250,
+            num_retrieved_observations=4,
+            use_action_interpolation=False,
+            lamda=10.0,
+        ),
+        data=RiclRLBenchDataConfig(
+            repo_id=None,
+            assets=AssetsConfig(
+                asset_id="rlbench_v4",
+                assets_dir="./assets/pi0_fast_rlbench_ricl_v4_no_interp",
+            ),
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data/jiajun/checkpoints/baseline_v4_n25/pi0fast_baseline_v4_n25_unified/pi0fast_baseline_v4_n25_unified/9999/params"
+        ),
+        num_train_steps=10000,
+        batch_size=16,
+        fsdp_devices=8,
+        freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7, action_horizon=10, max_token_len=250,
+            num_retrieved_observations=4, use_action_interpolation=False, lamda=10.0,
+        ).get_freeze_filter_with_frozen_img_encoder(),
+        ema_decay=None,
+        log_interval=1,
+        save_interval=10000,
+        keep_period=10000,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=10000, decay_lr=2.5e-6,
+        ),
+        random_sample=False,
+    ),
+    TrainConfig(
+        # RICL with-interp initialized from M1 Baseline (pi0fast_baseline_v4_n25_unified/9999).
+        # Same shape as no_interp_from_m1 but with action interpolation enabled.
+        name="pi0_fast_rlbench_ricl_v4_with_interp_from_m1",
+        processed_dir="./processed_rlbench_v4",
+        checkpoint_base_dir="/data/jiajun/checkpoints/ricl_v4_from_m1",
+        model=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=250,
+            num_retrieved_observations=4,
+            use_action_interpolation=True,
+            lamda=10.0,
+        ),
+        data=RiclRLBenchDataConfig(
+            repo_id=None,
+            assets=AssetsConfig(
+                asset_id="rlbench_v4",
+                assets_dir="./assets/pi0_fast_rlbench_ricl_v4_with_interp",
+            ),
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data/jiajun/checkpoints/baseline_v4_n25/pi0fast_baseline_v4_n25_unified/pi0fast_baseline_v4_n25_unified/9999/params"
+        ),
+        num_train_steps=10000,
+        batch_size=16,
+        fsdp_devices=8,
+        freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7, action_horizon=10, max_token_len=250,
+            num_retrieved_observations=4, use_action_interpolation=True, lamda=10.0,
+        ).get_freeze_filter_with_frozen_img_encoder(),
+        ema_decay=None,
+        log_interval=1,
+        save_interval=10000,
+        keep_period=10000,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=10000, decay_lr=2.5e-6,
+        ),
+    ),
     #
     # Fine-tuning Libero configs.
     #
