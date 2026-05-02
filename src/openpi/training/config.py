@@ -836,6 +836,47 @@ _CONFIGS = [
             warmup_steps=1000, peak_lr=2.5e-5, decay_steps=10000, decay_lr=2.5e-6,
         ),
     ),
+    TrainConfig(
+        # RICL no-interp initialized from M1 Baseline, slot-count matched to RoboRetry k=2.
+        # This is a fairness control for success-context vs failure-context retry.
+        name="pi0_fast_rlbench_ricl_v4_no_interp_from_m1_k2",
+        processed_dir="./processed_rlbench_v4",
+        checkpoint_base_dir="/data/jiajun/checkpoints/ricl_v4_from_m1_k2",
+        model=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=250,
+            num_retrieved_observations=2,
+            use_action_interpolation=False,
+            lamda=10.0,
+        ),
+        data=RiclRLBenchDataConfig(
+            repo_id=None,
+            assets=AssetsConfig(
+                asset_id="rlbench_v4",
+                assets_dir="./assets/pi0_fast_rlbench_ricl_v4_no_interp",
+            ),
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data/jiajun/checkpoints/baseline_v4_n25/pi0fast_baseline_v4_n25_unified/pi0fast_baseline_v4_n25_unified/9999/params"
+        ),
+        num_train_steps=10000,
+        batch_size=16,
+        fsdp_devices=8,
+        freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7, action_horizon=10, max_token_len=250,
+            num_retrieved_observations=2, use_action_interpolation=False, lamda=10.0,
+        ).get_freeze_filter_with_frozen_img_encoder(),
+        ema_decay=None,
+        log_interval=1,
+        save_interval=10000,
+        keep_period=10000,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=10000, decay_lr=2.5e-6,
+        ),
+        random_sample=False,
+    ),
     #
     # Fine-tuning Libero configs.
     #
