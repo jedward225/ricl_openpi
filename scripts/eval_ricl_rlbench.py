@@ -134,7 +134,10 @@ class VideoRecorder:
         top_row = np.concatenate([front, overhead, wrist], axis=1)  # (256, 768, 3)
         # Bottom row: retrieved context images (or black placeholder)
         if self._context_images:
-            ctx_row = np.concatenate(self._context_images[:3], axis=1)
+            ctx_imgs = list(self._context_images[:3])
+            while len(ctx_imgs) < 3:
+                ctx_imgs.append(np.zeros_like(front))
+            ctx_row = np.concatenate(ctx_imgs, axis=1)
         else:
             ctx_row = np.zeros_like(top_row)
         separator = np.zeros((4, top_row.shape[1], 3), dtype=np.uint8)
