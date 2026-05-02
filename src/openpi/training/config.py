@@ -660,7 +660,10 @@ _CONFIGS = [
         ),
         data=RiclRLBenchDataConfig(
             repo_id=None,
-            assets=AssetsConfig(asset_id="rlbench_v4"),
+            assets=AssetsConfig(
+                assets_dir="./assets/pi0_fast_rlbench_ricl_v4_with_interp",
+                asset_id="rlbench_v4",
+            ),
             base_config=DataConfig(prompt_from_task=False),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
@@ -697,7 +700,10 @@ _CONFIGS = [
         ),
         data=RiclRLBenchDataConfig(
             repo_id=None,
-            assets=AssetsConfig(asset_id="rlbench_v4"),
+            assets=AssetsConfig(
+                assets_dir="./assets/pi0_fast_rlbench_ricl_v4_no_interp",
+                asset_id="rlbench_v4",
+            ),
             base_config=DataConfig(prompt_from_task=False),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
@@ -751,6 +757,48 @@ _CONFIGS = [
             warmup_steps=1000, peak_lr=2.5e-5, decay_steps=30_000, decay_lr=2.5e-6,
         ),
         # Set to True if enable random sampling
+        random_sample=False,
+    ),
+    TrainConfig(
+        # RICL no-interpolation on data_v4 (12 tasks, N=25), k=2.
+        # Init-matched success-context control for RoboRetry-F/ModDrop: pi0_fast_base
+        # initialization, 10k steps, batch size 16, and at most two context slots.
+        name="pi0_fast_rlbench_ricl_v4_no_interp_k2",
+        processed_dir="./processed_rlbench_v4",
+        checkpoint_base_dir="/data/jiajun/checkpoints/ricl_v4_from_base_k2",
+        model=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7,
+            action_horizon=10,
+            max_token_len=250,
+            num_retrieved_observations=2,
+            use_action_interpolation=False,
+            lamda=10.0,
+        ),
+        data=RiclRLBenchDataConfig(
+            repo_id=None,
+            assets=AssetsConfig(
+                assets_dir="./assets/pi0_fast_rlbench_ricl_v4_no_interp",
+                asset_id="rlbench_v4",
+            ),
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data/shared/models/pi0_fast_base/params"
+        ),
+        num_train_steps=10_000,
+        batch_size=16,
+        fsdp_devices=8,
+        freeze_filter=pi0_fast_ricl.Pi0FASTRiclConfig(
+            action_dim=7, action_horizon=10, max_token_len=250,
+            num_retrieved_observations=2, use_action_interpolation=False, lamda=10.0,
+        ).get_freeze_filter_with_frozen_img_encoder(),
+        ema_decay=None,
+        log_interval=1,
+        save_interval=10_000,
+        keep_period=10_000,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000, peak_lr=2.5e-5, decay_steps=10_000, decay_lr=2.5e-6,
+        ),
         random_sample=False,
     ),
     TrainConfig(
