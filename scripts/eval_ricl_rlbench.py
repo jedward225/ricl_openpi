@@ -302,17 +302,18 @@ def run_evaluation(args):
 
         successes = 0
         episodes = []
+        max_attempts = 1 + args.blind_retry
+        cumulative_successes = [0] * max_attempts
 
         for ep in range(args.episodes):
-            # Fix scene determinism: seed per-episode so all models see same scene
+            # Fix scene determinism: seed per-episode so all models see same scene.
+            # For retry, reuse the same seed/variation before each attempt. RICL
+            # receives success-demo context as usual and never receives failure slots.
             ep_seed = args.seed * 10000 + ep
-            np.random.seed(ep_seed)
-            random.seed(ep_seed)
 
             # Set variation for this episode (matching eval_baseline.py)
             var_indices = TASK_VARIATIONS.get(task_name, [0])
             var_idx = var_indices[ep % len(var_indices)]
-            task.set_variation(var_idx)
 
             video_recorder = None
             if args.save_video:
@@ -324,43 +325,79 @@ def run_evaluation(args):
 
             print(f"  Episode {ep + 1}/{args.episodes} (var={var_idx})", end="")
 
-            try:
-                ep_result = evaluate_episode(
-                    env=task,
-                    policy=policy,
-                    task_name=task_name,
-                    max_steps=max_steps,
-                    replan_steps=args.replan_steps,
-                    video_recorder=video_recorder,
-                    debug=args.debug,
-                )
-            except Exception as e:
-                print(f" ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-                ep_result = {"success": False, "steps": 0, "time": 0, "num_inferences": 0}
+            attempt_results = []
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    print(f" [retry {attempt}]", end="")
+                    if video_recorder:
+                        sep = np.full((256, 768, 3), 40, dtype=np.uint8)
+                        sep[:4, :, 0] = 200
+                        video_recorder.frames.append(sep)
+
+                np.random.seed(ep_seed)
+                random.seed(ep_seed)
+                task.set_variation(var_idx)
+
+                try:
+                    ep_result = evaluate_episode(
+                        env=task,
+                        policy=policy,
+                        task_name=task_name,
+                        max_steps=max_steps,
+                        replan_steps=args.replan_steps,
+                        video_recorder=video_recorder,
+                        debug=args.debug,
+                    )
+                except Exception as e:
+                    print(f" ERROR: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    ep_result = {"success": False, "steps": 0, "time": 0, "num_inferences": 0}
+
+                attempt_results.append(ep_result)
+                if ep_result["success"]:
+                    break
 
             if video_recorder:
                 video_recorder.save()
 
-            episodes.append(ep_result)
-            if ep_result["success"]:
+            final_success = any(r["success"] for r in attempt_results)
+            success_at_attempt = next((i for i, r in enumerate(attempt_results) if r["success"]), -1)
+            final_result = {
+                "success": final_success,
+                "steps": sum(r["steps"] for r in attempt_results),
+                "time": sum(r["time"] for r in attempt_results),
+                "num_inferences": sum(r["num_inferences"] for r in attempt_results),
+                "attempts": len(attempt_results),
+                "success_at_attempt": success_at_attempt,
+                "attempt_results": attempt_results,
+            }
+
+            episodes.append(final_result)
+            if final_success:
                 successes += 1
-                print(f" -> SUCCESS ({ep_result['steps']} steps, {ep_result['num_inferences']} inferences)")
+                for k in range(success_at_attempt, max_attempts):
+                    cumulative_successes[k] += 1
+                print(f" -> SUCCESS (attempt {success_at_attempt}, {final_result['steps']} total steps, {final_result['num_inferences']} inferences)")
             else:
-                print(f" -> FAILED ({ep_result['steps']} steps)")
+                print(f" -> FAILED ({max_attempts} attempts, {final_result['steps']} total steps)")
 
         success_rate = successes / args.episodes
+        cumulative_sr = [c / args.episodes for c in cumulative_successes]
         task_result = {
             "task": task_name,
             "num_episodes": args.episodes,
             "success_rate": success_rate,
             "successes": successes,
+            "cumulative_sr": cumulative_sr,
             "episodes": episodes,
         }
         all_results[task_name] = task_result
 
-        print(f"\n  {task_name}: {success_rate*100:.1f}% ({successes}/{args.episodes})")
+        sr_str = f"{task_name}: SR@0={cumulative_sr[0]*100:.1f}%"
+        for k in range(1, max_attempts):
+            sr_str += f"  SR@{k}={cumulative_sr[k]*100:.1f}%"
+        print(f"\n  {sr_str} ({successes}/{args.episodes} solved within {max_attempts} attempts)")
 
         # Save incrementally
         with open(results_path, "w") as f:
@@ -401,6 +438,8 @@ def main():
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--blind_retry", type=int, default=0,
+                        help="Number of additional attempts after failure. RICL keeps success-demo context and receives no failure slots.")
 
     # Two-pass parsing: load YAML as defaults, CLI overrides
     args_first, _ = parser.parse_known_args()
@@ -413,6 +452,7 @@ def main():
         eval_cfg = yaml_config.get("eval", {})
         output_cfg = yaml_config.get("output", {})
         env_cfg = yaml_config.get("environment", {})
+        retry_cfg = yaml_config.get("retry", {})
 
         yaml_defaults = {}
         if "checkpoint" in model_cfg: yaml_defaults["checkpoint"] = model_cfg["checkpoint"]
@@ -425,6 +465,8 @@ def main():
         if "dir" in output_cfg: yaml_defaults["output_dir"] = output_cfg["dir"]
         if "save_video" in output_cfg and output_cfg["save_video"]: yaml_defaults["save_video"] = True
         if "headless" in env_cfg: yaml_defaults["headless"] = env_cfg["headless"]
+        if "max_k" in retry_cfg: yaml_defaults["blind_retry"] = retry_cfg["max_k"]
+        if "blind_retry" in eval_cfg: yaml_defaults["blind_retry"] = eval_cfg["blind_retry"]
 
         parser.set_defaults(**yaml_defaults)
 
