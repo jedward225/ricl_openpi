@@ -51,6 +51,76 @@ from rlbench_io import (
 ALL_TASKS = list(VLA_TASK_DESCRIPTIONS.keys())
 
 
+class PlannerCache:
+    """Cache RLBench arm planner outcomes within an episode.
+
+    This removes OMPL resampling as a source of retry lift: if the same robot
+    joint state requests the same target pose again, it gets the same path or
+    the same planner failure as the first attempt.
+    """
+
+    def __init__(self, precision: int = 2):
+        self._cache = {}
+        self._precision = precision
+        self._hits = 0
+        self._misses = 0
+        self._cached_failures = 0
+
+    def _make_key(self, arm, position, euler=None, quaternion=None):
+        joints = tuple(np.round(arm.get_joint_positions(), self._precision))
+        target = tuple(np.round(position, self._precision))
+        if quaternion is not None:
+            target += tuple(np.round(quaternion, self._precision))
+        elif euler is not None:
+            target += tuple(np.round(euler, self._precision))
+        return joints, target
+
+    def clear(self):
+        self._cache.clear()
+        self._hits = 0
+        self._misses = 0
+        self._cached_failures = 0
+
+    def stats(self) -> str:
+        total = self._hits + self._misses
+        if total == 0:
+            return "no calls"
+        return (
+            f"{self._hits} hits / {self._misses} misses "
+            f"({self._hits / total * 100:.0f}%), cached_failures={self._cached_failures}"
+        )
+
+    def install(self, task_env):
+        arm = task_env._scene.robot.arm
+        original_get_path = arm.get_path
+        cache = self
+
+        def cached_get_path(position, euler=None, quaternion=None, **kwargs):
+            key = cache._make_key(arm, position, euler=euler, quaternion=quaternion)
+            if key in cache._cache:
+                cache._hits += 1
+                kind, payload = cache._cache[key]
+                if kind == "error":
+                    cache._cached_failures += 1
+                    raise RuntimeError(payload)
+                from pyrep.robots.configuration_paths.arm_configuration_path import ArmConfigurationPath
+
+                return ArmConfigurationPath(arm, payload.copy())
+            cache._misses += 1
+            try:
+                path = original_get_path(position, euler=euler, quaternion=quaternion, **kwargs)
+            except Exception as e:
+                cache._cache[key] = ("error", f"{type(e).__name__}: {e}")
+                raise
+            cache._cache[key] = ("path", path._path_points.copy())
+            return path
+
+        arm.get_path = cached_get_path
+
+
+_planner_cache = PlannerCache()
+
+
 def load_ricl_policy(checkpoint_dir: str, demos_dir: str, no_interpolation: bool = False, config_name: str = None, random: bool = False):
     """Load trained RICL policy."""
     from openpi.policies import policy_config
@@ -281,6 +351,7 @@ def run_evaluation(args):
     # Evaluate
     all_results = {}
     results_path = os.path.join(args.output_dir, f"ricl_{timestamp}.json")
+    planner_cache_installed = False
 
     for task_name in tasks:
         # Rebuild KNN index with only this task's demos (within-task retrieval).
@@ -299,6 +370,10 @@ def run_evaluation(args):
 
         task_class = get_task_class(task_name)
         task = env.get_task(task_class)
+        if not planner_cache_installed:
+            _planner_cache.install(task)
+            planner_cache_installed = True
+            print("Planner cache installed")
 
         successes = 0
         episodes = []
@@ -306,6 +381,7 @@ def run_evaluation(args):
         cumulative_successes = [0] * max_attempts
 
         for ep in range(args.episodes):
+            _planner_cache.clear()
             # Fix scene determinism: seed per-episode so all models see same scene.
             # For retry, reuse the same seed/variation before each attempt. RICL
             # receives success-demo context as usual and never receives failure slots.
@@ -381,6 +457,7 @@ def run_evaluation(args):
                 print(f" -> SUCCESS (attempt {success_at_attempt}, {final_result['steps']} total steps, {final_result['num_inferences']} inferences)")
             else:
                 print(f" -> FAILED ({max_attempts} attempts, {final_result['steps']} total steps)")
+            print(f"    Planner cache: {_planner_cache.stats()}")
 
         success_rate = successes / args.episodes
         cumulative_sr = [c / args.episodes for c in cumulative_successes]
