@@ -67,12 +67,26 @@ class SceneManager:
 
     def save_initial_state(self, task_env, obs):
         scene = task_env._scene
+        try:
+            canonical_obs = scene.get_observation()
+        except Exception:
+            canonical_obs = obs
         self.arm_config = scene.robot.arm.get_configuration_tree()
         self.gripper_config = scene.robot.gripper.get_configuration_tree()
         self.arm_joints = scene.robot.arm.get_joint_positions()
         self.gripper_joints = scene.robot.gripper.get_joint_positions()
         self.task_state = scene.task.get_state()
-        self.initial_obs = deepcopy(obs)
+        self.initial_obs = deepcopy(canonical_obs)
+
+    def _restore_robot(self, scene):
+        scene.pyrep.set_configuration_tree(self.arm_config)
+        scene.pyrep.set_configuration_tree(self.gripper_config)
+        scene.robot.arm.set_joint_positions(self.arm_joints, disable_dynamics=True)
+        scene.robot.arm.set_joint_target_velocities([0] * len(scene.robot.arm.joints))
+        scene.robot.arm.set_joint_target_positions(self.arm_joints)
+        scene.robot.gripper.set_joint_positions(self.gripper_joints, disable_dynamics=True)
+        scene.robot.gripper.set_joint_target_velocities([0] * len(scene.robot.gripper.joints))
+        scene.robot.gripper.set_joint_target_positions(self.gripper_joints)
 
     def restore_full(self, task_env):
         scene = task_env._scene
@@ -89,17 +103,10 @@ class SceneManager:
                     if hasattr(cond, "_original_pos") and hasattr(cond, "_joint"):
                         cond._original_pos = cond._joint.get_joint_position()
 
-        scene.pyrep.set_configuration_tree(self.arm_config)
-        scene.pyrep.set_configuration_tree(self.gripper_config)
-        scene.robot.arm.set_joint_positions(self.arm_joints, disable_dynamics=True)
-        scene.robot.arm.set_joint_target_velocities([0] * len(scene.robot.arm.joints))
-        scene.robot.gripper.set_joint_positions(self.gripper_joints, disable_dynamics=True)
-        scene.robot.gripper.set_joint_target_velocities([0] * len(scene.robot.gripper.joints))
-        scene.robot.arm.set_joint_target_positions(self.arm_joints)
-        scene.robot.gripper.set_joint_target_positions(self.gripper_joints)
-
+        self._restore_robot(scene)
         for _ in range(10):
             scene.pyrep.step()
+        self._restore_robot(scene)
         return deepcopy(self.initial_obs)
 
 

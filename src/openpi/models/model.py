@@ -162,7 +162,13 @@ class ObservationPrefixPostfix(Generic[ArrayT]):
     def from_dict(cls, data: at.PyTree[ArrayT]) -> "Observation[ArrayT]":
         """This method defines the mapping between unstructured data (i.e., nested dict) to the structured Observation format."""
         # Ensure that tokenized_prompt_prefix, tokenized_prompt_postfix, and tokenized_prompt_mask are provided together.
-        if ("tokenized_prompt_prefix" in data) != ("tokenized_prompt_postfix" in data) != ("tokenized_prompt_mask" in data):
+        token_fields = (
+            "tokenized_prompt_prefix",
+            "tokenized_prompt_postfix",
+            "tokenized_prompt_mask",
+        )
+        token_field_present = [field in data for field in token_fields]
+        if any(token_field_present) and not all(token_field_present):
             raise ValueError("tokenized_prompt_prefix, tokenized_prompt_postfix, and tokenized_prompt_mask must be provided together.")
         # If images are uint8, convert them to [-1, 1] float32.
         for key in data["image"]:
@@ -389,7 +395,13 @@ class RiclObservation(Generic[ArrayT]):
         all_prefix = [f"retrieved_{i}_" for i in range(num_retrieved_observations)] + ["query_"]
         # Ensure that tokenized_prompt_prefix, tokenized_prompt_postfix, and tokenized_prompt_mask are provided together.
         for prefix in all_prefix:
-            if (f"{prefix}tokenized_prompt_prefix" in data) != (f"{prefix}tokenized_prompt_postfix" in data) != (f"{prefix}tokenized_prompt_mask" in data):
+            token_fields = (
+                f"{prefix}tokenized_prompt_prefix",
+                f"{prefix}tokenized_prompt_postfix",
+                f"{prefix}tokenized_prompt_mask",
+            )
+            token_field_present = [field in data for field in token_fields]
+            if any(token_field_present) and not all(token_field_present):
                 raise ValueError(f"{prefix}tokenized_prompt_prefix, {prefix}tokenized_prompt_postfix, and {prefix}tokenized_prompt_mask must be provided together.")
         # If images are uint8, convert them to [-1, 1] float32.
         image_keys = list(data[f"query_image"].keys())
