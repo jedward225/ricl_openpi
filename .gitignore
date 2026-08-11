@@ -173,3 +173,6 @@ pi0_fast_droid_ricl_checkpoint/
 preprocessing/collected_demos_training/
 preprocessing/collected_demos/
 
+# Local processed-dataset mounts.
+processed_rlbench_v4
+processed_rlbench_v4_random
